@@ -1,0 +1,7 @@
+name = "benchmark-ai-race"
+compatibility_date = "2026-07-05"
+compatibility_flags = [ "nodejs_compat" ]
+
+[pages_build_config]
+build_command = ""
+destination_dir = "."

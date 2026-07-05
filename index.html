@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#080808" />
+  <title>BENCHMARK — AI Race 2024–2027</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <svg class="svg-defs" aria-hidden="true">
+    <symbol id="i-mark" viewBox="0 0 32 32"><path d="M4 5h11v5H9v5h6v5H9v7H4V5Zm13 0h11v22H17v-5h6v-4h-6v-5h6v-3h-6V5Z"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="m13 2-9 12h7l-1 8 9-12h-7l1-8Z"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM9.5 20h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-building" viewBox="0 0 24 24"><path d="M4 21V5l8-3 8 3v16H4Zm4-12h2m4 0h2m-8 4h2m4 0h2m-8 4h2m4 0h2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M5 5l14 14M19 5 5 19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M7 3h10v5a5 5 0 0 1-10 0V3Zm0 2H3v2a4 4 0 0 0 5 4m9-6h4v2a4 4 0 0 1-5 4m-4 2v5m-4 3h8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+  </svg>
+
+  <div id="app" class="app-shell is-hidden">
+    <aside class="sidebar">
+      <div class="brand"><svg><use href="#i-mark"/></svg><span>BENCH<br>MARK</span></div>
+      <nav class="nav" aria-label="Game sections">
+        <button class="nav-btn active" data-view="race"><svg><use href="#i-grid"/></svg><span>Model race</span></button>
+        <button class="nav-btn" data-view="hype"><svg><use href="#i-bolt"/></svg><span>Hype</span></button>
+        <button class="nav-btn" data-view="notifications"><svg><use href="#i-bell"/></svg><span>Activity</span><em id="unreadCount">0</em></button>
+        <button class="nav-btn" data-view="companies"><svg><use href="#i-building"/></svg><span>Companies</span></button>
+      </nav>
+      <div class="sidebar-bottom">
+        <button id="newGameMenuBtn" class="utility-btn new-game-menu-btn">New game <span>＋</span></button>
+        <button id="savesBtn" class="utility-btn">Save / load <span>→</span></button>
+        <button id="audienceBtn" class="utility-btn">Market interest <span>→</span></button>
+        <button id="researchBtn" class="utility-btn">Research lab <span>→</span></button>
+        <button id="subscriptionsBtn" class="utility-btn">Subscriptions <span>→</span></button>
+        <button id="rulesBtn" class="utility-btn">Rules & scoring <span>→</span></button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">GLOBAL AI INDEX / <span id="difficultyLabel">STANDARD</span></p>
+          <h1 id="viewTitle">Model race</h1>
+        </div>
+        <div class="round-control">
+          <div class="date-block"><span id="monthLabel">Q1</span><strong id="yearLabel">2024</strong></div>
+          <button id="advanceBtn" class="advance-btn">Advance quarter <svg><use href="#i-arrow"/></svg></button>
+        </div>
+      </header>
+
+      <section class="stat-strip">
+        <div><span>Budget</span><strong id="budgetStat">€10.00M</strong><small id="runwayStat">16 quarters</small></div>
+        <div><span>Best model</span><strong id="bestStat">—</strong><small id="bestNameStat">No release</small></div>
+        <div><span>Company hype</span><strong id="hypeStat">0</strong><small id="hypeRankStat">Unranked</small></div>
+        <div><span>Race points</span><strong id="pointsStat">0</strong><small>Yearly podiums</small></div>
+      </section>
+
+      <section id="raceView" class="view active">
+        <div class="section-heading">
+          <div><p class="eyebrow">COMPOSITE INTELLIGENCE</p><h2>Live model ranking</h2></div>
+          <button id="newModelBtn" class="primary-btn"><svg><use href="#i-plus"/></svg> New model</button>
+        </div>
+        <div class="ranking-head"><span>Rank / model</span><span>Company</span><span>Class</span><span>Score</span><span>Δ hype</span></div>
+        <div id="modelRanking" class="ranking-list"></div>
+      </section>
+
+      <section id="hypeView" class="view">
+        <div class="section-heading"><div><p class="eyebrow">MARKET ATTENTION</p><h2>Company hype</h2></div><p class="section-note">Momentum decays every quarter. Better launches travel further.</p></div>
+        <div class="ranking-head company-grid"><span>Rank / company</span><span>Latest release</span><span>Users</span><span>Subscribers</span><span>Hype</span><span>Points</span></div>
+        <div id="hypeRanking" class="ranking-list"></div>
+      </section>
+
+      <section id="notificationsView" class="view">
+        <div class="section-heading"><div><p class="eyebrow">WIRE FEED</p><h2>Activity</h2></div><button id="markReadBtn" class="text-btn">Mark all read</button></div>
+        <div id="notificationList" class="activity-list"></div>
+      </section>
+
+      <section id="companiesView" class="view">
+        <div class="section-heading"><div><p class="eyebrow">16 LABS</p><h2>Company directory</h2></div><p class="section-note">Open a company to inspect its models and remaining budget.</p></div>
+        <div id="companyGrid" class="company-cards"></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="setupScreen" class="setup-screen">
+    <div class="setup-brand"><svg><use href="#i-mark"/></svg><span>BENCHMARK</span></div>
+    <div class="setup-copy">
+      <p class="eyebrow">AI INDUSTRY SIMULATOR / 2024–2027</p>
+      <h1>Build the model<br>everyone chases.</h1>
+      <p>Sixteen quarters. Sixteen labs. One finite runway. Every company begins with zero models.</p>
+    </div>
+    <form id="setupForm" class="setup-form">
+      <label>Company name<input id="companyName" maxlength="22" placeholder="e.g. Northstar AI" required /></label>
+      <label>First model family<input id="firstModelName" maxlength="24" placeholder="e.g. Zemmi" required /></label>
+      <label class="logo-upload-label">Company logo
+        <span class="logo-upload">
+          <span id="logoPreview" class="logo-preview"><svg><use href="#i-plus"/></svg></span>
+          <span class="logo-upload-copy"><strong>Upload your mark</strong><small>PNG, JPG, WEBP or SVG · max 1.5 MB</small></span>
+          <span class="logo-upload-action">Choose file</span>
+          <input id="companyLogo" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" required />
+        </span>
+      </label>
+      <fieldset><legend>Difficulty</legend>
+        <label class="mode-option"><input type="radio" name="difficulty" value="standard" checked><span><strong>Standard</strong><small>Rivals start with €10M</small></span></label>
+        <label id="hardModeOption" class="mode-option locked"><input type="radio" name="difficulty" value="hard" disabled><span><strong>Hard <em id="hardModeBadge">LOCKED</em></strong><small>Rivals start with €20M and move faster</small></span></label>
+      </fieldset>
+      <button id="unlockHardModeBtn" class="hard-unlock-btn" type="button"><span>Unlock Hard Mode</span><strong>€2.99 once</strong></button>
+      <button class="start-btn" type="submit">Create company <svg><use href="#i-arrow"/></svg></button>
+      <small class="setup-foot">Your first model family is saved as a draft. Nobody can release until Q2 2024.</small>
+    </form>
+  </div>
+
+  <div id="modalBackdrop" class="modal-backdrop is-hidden"></div>
+  <section id="modelModal" class="modal model-modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="modelModalTitle">
+    <div class="modal-header"><div><p class="eyebrow">R&D LAB</p><h2 id="modelModalTitle">Build a new model</h2></div><button class="icon-btn close-modal"><svg><use href="#i-close"/></svg></button></div>
+    <div id="modelLockNotice" class="lock-notice is-hidden"></div>
+    <form id="modelForm">
+      <div class="builder-grid">
+        <div class="builder-main">
+          <div class="form-row"><label>Model family<input id="modelName" maxlength="24" required /></label><label>Version path<select id="modelType"><option value="new">New generation</option><option value="update">Updated version</option><option value="edition">Edition of current version</option></select></label></div>
+          <div class="edition-section"><span>Edition tags <small>Optional · combine with version path</small></span><div class="edition-picker"><label><input type="checkbox" value="pro"><b>PRO</b></label><label><input type="checkbox" value="lite"><b>LITE</b></label><label><input type="checkbox" value="flash"><b>FLASH</b></label></div></div>
+          <div class="form-row"><label>Access<select id="modelAccess"><option value="hybrid">Free + subscription</option><option value="free">Free for everyone</option><option value="paid">Subscription only</option></select></label><label>Subscription<select id="modelTier"></select></label></div>
+          <div class="form-row"><label>Free messages / day<input id="freeLimit" type="number" min="0" max="200" value="12" /></label><label>Subscriber messages / day<input id="proLimit" type="number" min="10" max="2000" value="200" /></label></div>
+          <div class="category-top"><div><h3>25 essential AI benchmarks</h3><p>Core fields can hit 100 now—but extreme specialization can consume most of your budget.</p></div><div class="preset-actions"><button type="button" id="audienceFocusBtn" class="focus-preset-btn">Focus: Casual users</button><button type="button" id="balanceSliders" class="text-btn">Balanced preset</button></div></div>
+          <div id="categoryGrid" class="category-grid"></div>
+        </div>
+        <aside class="build-summary">
+          <p class="eyebrow">PROJECT ESTIMATE</p>
+          <div class="dial" id="scoreDial"><strong id="projectedScore">0</strong><span>projected score</span></div>
+          <dl><div><dt>Release name</dt><dd id="projectedName">—</dd></div><div><dt>Build cost</dt><dd id="projectedCost">€0</dd></div><div><dt>Build time</dt><dd id="projectedTime">0 qtr</dd></div><div><dt>Launch hype</dt><dd id="projectedHype">+0</dd></div><div><dt>Lab ceiling</dt><dd id="labCeiling">42</dd></div></dl>
+          <div id="riskText" class="risk-text">Set the benchmark targets to price the project.</div>
+          <button id="releaseModelBtn" class="start-btn" type="submit">Begin development <svg><use href="#i-arrow"/></svg></button>
+        </aside>
+      </div>
+    </form>
+  </section>
+
+  <section id="sidePanel" class="side-panel is-hidden" aria-live="polite"></section>
+  <div id="toast" class="toast" role="status"></div>
+  <script src="https://cdn.paddle.com/paddle/v2/paddle.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

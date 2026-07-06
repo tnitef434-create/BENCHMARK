@@ -1,6 +1,7 @@
 .mobile-menu-btn{display:none!important}
 .finance-breakdown{grid-template-columns:repeat(auto-fit,minmax(92px,1fr))!important}
+.ranking-toolbar{display:flex;justify-content:flex-end;align-items:center;gap:12px;padding:0 0 14px}.ranking-toolbar>span{color:#666;font-size:9px;text-transform:uppercase;letter-spacing:.12em}.ranking-toolbar .custom-select{width:210px}.ranking-toolbar .custom-select-trigger{min-height:36px}.company-role{display:inline-flex;align-items:center;gap:7px;border:1px solid #333;border-radius:4px;padding:6px 9px;color:#888;font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.12em}.company-role i{width:5px;height:5px;border-radius:50%;background:#666}.company-role.player{background:#f0f0eb;border-color:#f0f0eb;color:#090909}.company-role.player i{background:#090909}.company-role.insolvent{border-color:#5c302e;color:#ff7770}.company-role.insolvent i{background:#ff5a52}
 .mobile-action-list{display:grid;margin-top:24px;border-top:1px solid #292929}
 .mobile-action-list button{border:0;border-bottom:1px solid #292929;background:none;color:#ddd;padding:17px 4px;display:flex;justify-content:space-between;text-align:left;transition:padding .15s,background .15s}
 .mobile-action-list button:hover{background:#151515;padding-left:10px}
-@media(max-width:620px){.nav{grid-template-columns:repeat(6,1fr)!important}.mobile-menu-btn{display:grid!important}}
+@media(max-width:620px){.nav{grid-template-columns:repeat(6,1fr)!important}.mobile-menu-btn{display:grid!important}.ranking-toolbar{justify-content:space-between}.ranking-toolbar .custom-select{width:180px}}

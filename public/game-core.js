@@ -6,6 +6,8 @@ export const CLASS_RULES = {
 };
 export const OPERATING_MODES={full:{label:"Full",upkeep:1,reach:1,limits:1},lean:{label:"Lean",upkeep:.6,reach:.93,limits:1},legacy:{label:"Legacy",upkeep:.25,reach:.8,limits:.5}};
 export const AD_CAMPAIGNS={small:{label:"Small",cost:.05,boost:8},medium:{label:"Medium",cost:.2,boost:20},large:{label:"Large",cost:.6,boost:38}};
+export const FINAL_ROUND=12;
+export function canFinishRace(round){return round>=FINAL_ROUND;}
 export const INVESTORS=[
   {id:"blackrock",name:"BlackRock",label:"Ultra-selective",base:.05,logo:"assets/investors/blackrock.svg"},
   {id:"berkshire",name:"Berkshire Hathaway",label:"Very selective",base:.07,logo:"assets/investors/berkshire.svg"},
@@ -70,12 +72,12 @@ export function spendableBudget(budget,hard=false,reserve=.1){return Math.max(0,
 export function runDeterministicSimulation(seed=1,hard=false){
   let value=seed>>>0;const random=()=>{value=(value*1664525+1013904223)>>>0;return value/4294967296;};
   const companies=Array.from({length:16},(_,id)=>({id,budget:id===15?10:hard?20:10,models:[],users:0,subscribers:0,requests:0,points:0,streak:0,insolvent:false}));
-  for(let round=0;round<16;round++)companies.forEach(c=>{
+  for(let round=0;round<=FINAL_ROUND;round++)companies.forEach(c=>{
     if(!c.insolvent&&round>0&&(c.models.length===0||random()<.32)){const types=["flagship","pro","light","flash"],type=types[Math.floor(random()*types.length)],score=clamp(35+round*2.5+random()*18,1,99),cost=CLASS_RULES[type].build+score*score*.00034;c.budget-=cost;c.models.push({score,type,users:25,subs:0,freeLimit:type==="pro"?4:18,proLimit:200,mode:"full"});}
     if(c.models.length){const best=Math.max(...c.models.map(m=>m.score)),target=Math.max(c.models.length*25,Math.round((120000+round*30000)*(best/70)*(0.7+random()*.6)));c.users=Math.max(c.models.length*25,Math.round(c.users*.45+target*.55));c.subscribers=Math.round(c.users*subscriptionConversion({offerScore:clamp(best*.75+c.models.length*6,0,100)}));let remaining=c.users;c.models.forEach((m,i)=>{m.users=i===c.models.length-1?Math.max(25,remaining):Math.max(25,Math.round(c.users/c.models.length));remaining-=m.users;m.subs=Math.round(c.subscribers*m.users/c.users);const compute=inferenceCost({users:m.users,subscribers:m.subs,freeLimit:m.freeLimit,proLimit:m.proLimit,score:m.score,type:m.type,mode:m.mode});c.budget+=m.subs*19*3/1e6-compute.total-upkeepCost(m.score,m.type,m.mode);});}
     if(c.budget<2&&c.requests<3){c.requests++;const result=investmentDecision({investor:INVESTORS[Math.floor(random()*INVESTORS.length)],amount:3,metrics:{bestScore:Math.max(0,...c.models.map(m=>m.score)),projectEstimate:0,hype:20,users:c.users,subscribers:c.subscribers},random});c.budget+=result.offer;}
     if(hard&&c.budget<0)c.insolvent=true;
     if(!hard&&c.budget<.1)c.budget=.1;
   });
-  return{rounds:16,companies};
+  return{rounds:FINAL_ROUND+1,companies};
 }

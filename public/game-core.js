@@ -78,6 +78,13 @@ export function annualPerformancePenalty({hype=0,bottomRank=99,quartersSinceLaun
   const stagnation=hasModels&&quartersSinceLaunch>=5?1:0;
   return {lowHype,stagnation,total:lowHype+stagnation};
 }
+export function reconcileModelAccess(models=[],requestedSubscribers=0){
+  const eligible=models.filter(m=>m.access!=="free"),eligibleTotal=eligible.reduce((sum,m)=>sum+Math.max(0,m.activeUsers||0),0),subscribers=Math.min(Math.max(0,Math.round(requestedSubscribers)),eligibleTotal);let assigned=0;
+  eligible.forEach((m,i)=>{const share=i===eligible.length-1?subscribers-assigned:Math.min(m.activeUsers,Math.round(subscribers*m.activeUsers/Math.max(1,eligibleTotal)));m.paidUsers=Math.min(m.activeUsers,Math.max(0,share));assigned+=m.paidUsers;});
+  models.filter(m=>m.access==="free").forEach(m=>m.paidUsers=0);
+  models.filter(m=>m.access==="paid").forEach(m=>{const oldActive=m.activeUsers-(m.userDelta||0);m.activeUsers=m.paidUsers;m.userDelta=m.activeUsers-oldActive;});
+  return subscribers;
+}
 export function modelBuildCost({values=[],type="flagship",variance=0,overreach=0,access="hybrid"}){
   const avg=average(values),base=CLASS_RULES[type]?.build??.72;
   const frontier=values.reduce((sum,value)=>sum+5.5*Math.pow(Math.max(0,value-65)/35,3),0);

@@ -1,3 +1,5 @@
+import {AD_CAMPAIGNS,CLASS_RULES,INVESTORS,OPERATING_MODES,average,categoryImportance,classCap,clamp,developmentTime,emptyLedger,forecastLabel,inferenceCost,investmentDecision,spendableBudget,subscriptionConversion,upkeepCost,weakReleaseFactor} from "./game-core.js";
+
 const LEGACY_CATEGORIES = ["Reasoning","Mathematics","Coding","Physics","Chemistry","Biology","Medicine","Law","Finance","History","Geography","Literature","Creative writing","Translation","Long-context recall","Instruction following","Factual accuracy","Common sense","Planning","Tool use","Agentic work","Data analysis","Cybersecurity","Visual understanding","Image creation","Audio understanding","Speech generation","Video understanding","Multilingual ability","Low-resource languages","Safety","Bias resistance","Speed","Efficiency","Reliability"];
 const PREVIOUS_CATEGORIES = ["Reasoning","Mathematics","Coding","Science","Factual accuracy","Instruction following","Common sense","Long-context recall","Planning","Tool use","Agentic work","Data analysis","Visual understanding","Image generation","Audio understanding","Speech generation","Video understanding","Multimodal integration","Multilingual ability","Safety","Speed","Efficiency","Reliability"];
 const CATEGORIES = [
@@ -25,10 +27,10 @@ const RESEARCH_TRACKS = {
 const RESEARCH_CAPS = [25,50,75,100];
 
 const TYPES = {
-  flagship: { label: "Flagship", base: .72, hype: 18, time: 1, limit: 3 },
-  pro: { label: "Pro", base: 1.15, hype: 26, time: 2, limit: 5 },
-  light: { label: "Lite", base: .28, hype: 9, time: 0, limit: -4 },
-  flash: { label: "Flash", base: .38, hype: 13, time: 0, limit: -2 },
+  flagship: { label: "Flagship", base: .72, hype: 18, time: 2, limit: 3 },
+  pro: { label: "Pro", base: 1.15, hype: 26, time: 3, limit: 5 },
+  light: { label: "Lite", base: .28, hype: 9, time: 1, limit: -4 },
+  flash: { label: "Flash", base: .38, hype: 13, time: 1, limit: -2 },
   reasoning: { label: "Reasoning", base: .82, hype: 20, time: 1, limit: 4 },
   multimodal: { label: "Multimodal", base: .94, hype: 22, time: 1, limit: 3 },
   open: { label: "Open", base: .55, hype: 17, time: 1, limit: -1 }
@@ -56,25 +58,23 @@ const QUARTERS = ["Q1", "Q2", "Q3", "Q4"];
 const TOTAL_ROUNDS = 16;
 const STORAGE_KEY = "benchmark-ai-race-v2";
 const SAVE_SLOTS_KEY = "benchmark-ai-race-save-slots-v1";
-const HARD_ENTITLEMENT_KEY = "benchmark-hard-mode-entitlement-v1";
 let state = null;
 let builderValues = Array(CATEGORIES.length).fill(30);
 let builderAudienceApplied = false;
-let paddleReady = false;
-let paddleConfig = null;
+const CATEGORY_IMPORTANCE=categoryImportance(CATEGORIES,AUDIENCES);
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
-const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-const money = (n) => `€${Math.max(0, n).toFixed(2)}M`;
+const money = (n) => `${Number(n)<0?"−":""}€${Math.abs(Number(n)||0).toFixed(2)}M`;
+const availableCash = (c) => spendableBudget(c.budget,state?.difficulty==="hard");
 const dateLabel = (m = state.month) => `${QUARTERS[m % 4]} ${2024 + Math.floor(m / 4)}`;
 const company = (id) => state.companies.find(c => c.id === id);
 const player = () => company("player");
 const releasedModels = () => state.companies.flatMap(c => c.models.filter(m => m.released).map(m => ({...m, companyId:c.id, companyName:c.name})));
-const average = arr => arr.reduce((a,b)=>a+b,0) / Math.max(1, arr.length);
 
 function makeCompany(id, name, mark, budget, names = [], logo = null) {
-  return { id, name, mark, logo: logo || `assets/logos/${id}.png`, budget, models: [], hype: 0, points: 0, users:0, subscribers:0, userDelta:0, subDelta:0, metricsHistory:[], lastLaunch: -99, proUntil: 0, project: null, research:{scale:0,vision:0,audio:0,video:0}, researchProject:null, modelNames: names, subscriptions: [] };
+  const generated=`data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80"><rect width="80" height="80" rx="18" fill="#f2f2ed"/><text x="40" y="48" text-anchor="middle" fill="#090909" font-family="Arial,sans-serif" font-size="24" font-weight="700">${String(mark).replace(/[<>&]/g,"").slice(0,2)}</text></svg>`)}`;
+  return { id, name, mark, logo: logo || (id==="player"?generated:`assets/logos/${id}.png`), budget, models: [], hype: 0, points: 0, users:0, subscribers:0, userDelta:0, subDelta:0, metricsHistory:[], financeHistory:[], currentLedger:emptyLedger(0),lastLaunch:-99,proUntil:0,top3Streak:0,streakPoints:0,project:null,research:{scale:0,vision:0,audio:0,video:0},researchProject:null,modelNames:names,subscriptions:[],campaign:null,campaignRepeat:0,investmentRequests:0,investments:[],insolvent:false };
 }
 
 function createMarketSnapshot(round,random=Math.random){
@@ -92,7 +92,7 @@ function newGame(name, firstModel, difficulty, playerLogo) {
   p.subscriptions = [{id:"pro", name:"Pro", price:19, members:0}];
   companies.push(p);
   return {
-    version: 4, month: 0, difficulty, companies, firstDraft: cleanFamily(firstModel), selectedAudience:"casual", marketHistory:[createMarketSnapshot(0)],
+    version: 5, month: 0, difficulty, companies, firstDraft: cleanFamily(firstModel), selectedAudience:"casual", marketHistory:[createMarketSnapshot(0)],
     notifications: [{id:Date.now(), month:0, companyId:"system", unread:true, title:"The race begins", text:"All 16 labs enter Q1 2024 with zero released models."}],
     gameOver:false, unread:1, yearlyAwards:[], previousModelRanks:{}, seed: Math.floor(Math.random()*999999)
   };
@@ -121,6 +121,7 @@ function migrateState(){
     state.companies.forEach(c=>{c.lastLaunch=Math.floor((c.lastLaunch||-99)/3);c.proUntil=Math.ceil((c.proUntil||0)/3);if(c.project)c.project.due=Math.max(state.month+1,Math.ceil(c.project.due/3));c.models.forEach(m=>m.releaseMonth=Math.floor((m.releaseMonth||0)/3));});
   }
   if((state.version||2)<4){state.companies.forEach(c=>{if(c.project?.values)c.project.values=migrateBenchmarkValues(c.project.values);c.models.forEach(m=>m.values=migrateBenchmarkValues(m.values));});state.version=4;}
+  if((state.version||4)<5)state.version=5;
   state.firstDraft=cleanFamily(state.firstDraft);
   state.selectedAudience||="casual";state.marketHistory||=[createMarketSnapshot(state.month||0)];
   state.previousModelRanks ||= {};
@@ -129,9 +130,13 @@ function migrateState(){
     if(c.id!=="player"&&!c.strategy)c.strategy={quality:.82+Math.random()*.43,speed:.72+Math.random()*.55,pro:.12+Math.random()*.6,free:.12+Math.random()*.7,update:.42+Math.random()*.45,focus:(i*3+Math.floor(Math.random()*12))%CATEGORIES.length};
     if(c.strategy&&!c.strategy.audience)c.strategy.audience=Object.keys(AUDIENCES)[i%Object.keys(AUDIENCES).length];
     if(c.strategy)c.strategy.focus=(c.strategy.focus||0)%CATEGORIES.length;
-    c.users||=0;c.subscribers||=0;c.userDelta||=0;c.subDelta||=0;c.metricsHistory||=[];
+    c.users||=0;c.subscribers||=0;c.userDelta||=0;c.subDelta||=0;c.metricsHistory||=[];c.financeHistory||=[];c.currentLedger||=emptyLedger(state.month||0);
+    c.top3Streak||=0;c.streakPoints||=0;c.campaign??=null;c.campaignRepeat||=0;c.investmentRequests||=0;c.investments||=[];c.insolvent||=false;
     c.research||={scale:0,vision:0,audio:0,video:0};c.researchProject||=null;
-    c.models.forEach((m,j)=>{m.id ||= `${c.id}-${m.releaseMonth}-${j}`;m.family ||= cleanFamily(m.name);m.versionNumber ||= j+1;m.modifiers ||= m.type==="pro"?["pro"]:m.type==="light"?["lite"]:m.type==="flash"?["flash"]:[];});
+    if(c.project&&c.project.publicForecast==null)c.project.publicForecast=clamp(c.project.estimate||average(c.project.values||[40]),1,99);
+    c.subscriptions||=[];c.subscriptions.forEach(t=>{t.members||=0;t.memberDelta||=0;});
+    c.models.forEach((m,j)=>{m.id ||= `${c.id}-${m.releaseMonth}-${j}`;m.family ||= cleanFamily(m.name);m.versionNumber ||= j+1;m.modifiers ||= m.type==="pro"?["pro"]:m.type==="light"?["lite"]:m.type==="flash"?["flash"]:[];if(m.modifiers.length>1)m.modifiers=[m.modifiers.includes("pro")?"pro":m.modifiers.includes("flash")?"flash":"lite"];m.operatingMode||="full";m.activeUsers||=0;m.paidUsers||=0;m.userDelta||=0;m.revenue||=0;m.inferenceCost||=0;m.upkeep||=0;m.net||=0;m.financeHistory||=[];m.popularityFactor||=1;});
+    const released=c.models.filter(m=>m.released);if(released.length&&c.users<=0){released.forEach(m=>m.activeUsers=Math.max(25,Math.round(120+m.score*8)));c.users=released.reduce((sum,m)=>sum+m.activeUsers,0);c.userDelta=c.users;}
   });
 }
 
@@ -143,8 +148,8 @@ function nextVersion(c,family,mode,modifiers=[]){const existing=familyModels(c,f
 function releaseName(c,family,mode,modifiers=[]){const version=nextVersion(c,family,mode,modifiers);if(version==null)return null;const suffix=modifiers.map(x=>x.toUpperCase()).join(" ");return `${cleanFamily(family)} ${Number.isInteger(version)?version:version.toFixed(1)}${suffix?` ${suffix}`:""}`;}
 function modelClassLabel(m){const path=m.mode==="update"?"Updated":m.mode==="edition"?"Edition":"New";return [path,...(m.modifiers||[]).map(x=>x.toUpperCase())].join(" + ");}
 function researchTrackForCategory(index){return Object.entries(RESEARCH_TRACKS).find(([,track])=>track.categories.includes(index))?.[0]||null;}
-function categoryCap(c,index){const track=researchTrackForCategory(index);return track?RESEARCH_CAPS[c.research?.[track]||0]:100;}
-function capValues(values,c){return values.map((v,i)=>Math.min(v,categoryCap(c,i)));}
+function categoryCap(c,index,type="flagship"){const track=researchTrackForCategory(index),researchCap=track?RESEARCH_CAPS[c.research?.[track]||0]:100;return classCap(type,CATEGORIES[index],researchCap);}
+function capValues(values,c,type="flagship"){return values.map((v,i)=>Math.min(v,categoryCap(c,i,type)));}
 function compactNumber(value){return new Intl.NumberFormat("en",{notation:"compact",maximumFractionDigits:1}).format(Math.max(0,Math.round(value||0)));}
 function signedNumber(value){const n=Math.round(value||0);return `${n>=0?"+":"−"}${compactNumber(Math.abs(n))}`;}
 function currentMarket(){return state.marketHistory[state.marketHistory.length-1];}
@@ -159,17 +164,30 @@ function companyAudienceProfile(c){
   Object.keys(AUDIENCES).forEach(key=>profile[key]=models.length?Math.max(...models.map(m=>audienceScore(m,key))):0);
   return profile;
 }
+function modelMarketAppeal(model,market,c){
+  let publicScore=0;Object.entries(market.shares).forEach(([key,share])=>publicScore+=audienceScore(model,key)*share);
+  const age=Math.max(0,state.month-model.releaseMonth),freshness=Math.max(.18,Math.pow(.92,age));
+  const operation=OPERATING_MODES[model.operatingMode||"full"]?.reach||1,classPopularity=CLASS_RULES[model.type]?.popularity||1;
+  return Math.max(.0001,Math.pow(Math.max(1,publicScore)/100,2.25)*freshness*operation*classPopularity*(model.popularityFactor||1)*(1+c.hype/220));
+}
 function applyAudiencePreset(){
   if(state.difficulty==="hard"){toast("Audience focus assistance is disabled in Hard mode.");return;}
   const audience=AUDIENCES[state.selectedAudience],base=clamp(labCeiling()-10,24,72);
-  builderValues=CATEGORIES.map((category,index)=>clamp(Math.round(base+(audience.weights[category]||.08)*28),1,categoryCap(player(),index)));
+  const type=primaryType(selectedModifiers());builderValues=CATEGORIES.map((category,index)=>clamp(Math.round(base+(audience.weights[category]||.08)*28),1,categoryCap(player(),index,type)));
   builderAudienceApplied=true;renderSliders();updateEstimate();toast(`Benchmark focused on ${audience.name}.`);
 }
 function updateQuarterlyAudience(){
   if(currentMarket()?.round!==state.month)state.marketHistory.push(createMarketSnapshot(state.month,seeded));
-  const market=currentMarket(),profiles=new Map(),rawScores=new Map();let rawTotal=0;
-  state.companies.forEach(c=>{const profile=companyAudienceProfile(c);profiles.set(c.id,profile);let appeal=0;Object.entries(market.shares).forEach(([key,share])=>appeal+=profile[key]*share);const latest=[...c.models].filter(m=>m.released).sort((a,b)=>b.releaseMonth-a.releaseMonth)[0],accessFactor=latest?.access==="paid"?.72:latest?.access==="hybrid"?.94:1.06;const raw=c.models.some(m=>m.released)?Math.pow(Math.max(1,appeal)/100,2.25)*accessFactor*(1+c.hype/180):0;rawScores.set(c.id,raw);rawTotal+=raw;});
-  state.companies.forEach(c=>{const raw=rawScores.get(c.id),targetUsers=rawTotal?market.total*.62*raw/rawTotal:0,previousUsers=c.users||0,users=Math.round(previousUsers*.38+targetUsers*.62);c.userDelta=users-previousUsers;c.users=users;const profile=profiles.get(c.id),paidStrength=(profile.business*.35+profile.coders*.25+profile.casual*.12)/100,hasPaid=c.id==="player"?c.subscriptions.length>0:c.models.some(m=>m.access!=="free"),conversion=hasPaid?clamp(.018+paidStrength*.11,.015,.14):.006,targetSubs=Math.round(users*conversion),previousSubs=c.subscribers||0,subs=Math.round(previousSubs*.45+targetSubs*.55);c.subDelta=subs-previousSubs;c.subscribers=subs;c.hype=Math.max(0,c.hype+clamp(c.userDelta/120000+c.subDelta/18000,-14,20)+Math.log10(users+1)*.18);c.metricsHistory.push({round:state.month,users,subscribers:subs,userDelta:c.userDelta,subDelta:c.subDelta});if(c.metricsHistory.length>16)c.metricsHistory.shift();if(c.id==="player"&&c.subscriptions.length){const perTier=Math.floor(subs/c.subscriptions.length);c.subscriptions.forEach((tier,i)=>tier.members=perTier+(i===0?subs-perTier*c.subscriptions.length:0));}});
+  const market=currentMarket(),companyRaw=new Map(),modelRaw=new Map();let rawTotal=0;
+  state.companies.forEach(c=>{const models=c.models.filter(m=>m.released),scores=models.map(m=>[m,modelMarketAppeal(m,market,c)]),sorted=scores.map(x=>x[1]).sort((a,b)=>b-a);modelRaw.set(c.id,scores);const latest=[...models].sort((a,b)=>b.releaseMonth-a.releaseMonth)[0],accessFactor=latest?.access==="paid"?.76:latest?.access==="hybrid"?.96:1.04;const raw=models.length?(sorted[0]+sorted.slice(1).reduce((a,b)=>a+b*.2,0))*accessFactor:0;companyRaw.set(c.id,raw);rawTotal+=raw;});
+  state.companies.forEach(c=>{
+    const models=c.models.filter(m=>m.released),raw=companyRaw.get(c.id)||0,minimum=models.length*25,target=rawTotal?Math.max(minimum,market.total*.62*raw/rawTotal):minimum,previous=c.users||0,users=models.length?Math.max(minimum,Math.round(previous*.45+target*.55)):0;c.userDelta=users-previous;c.users=users;
+    const weights=modelRaw.get(c.id)||[],weightTotal=weights.reduce((sum,x)=>sum+x[1],0)||1,distributable=Math.max(0,users-weights.length*25);let extraAssigned=0;weights.forEach(([m,w],i)=>{const old=m.activeUsers||0,extra=i===weights.length-1?distributable-extraAssigned:Math.round(distributable*w/weightTotal),next=25+Math.max(0,extra);m.userDelta=next-old;m.activeUsers=next;extraAssigned+=Math.max(0,extra);});
+    const profile=companyAudienceProfile(c),catalogQuality=Math.max(0,...Object.values(profile)),diversity=clamp(models.length*8,0,24),tiers=c.subscriptions||[],avgPrice=tiers.length?average(tiers.map(t=>t.price)):30,limitValue=models.length?average(models.map(m=>clamp((m.proLimit||0)/10,0,100))):0,offerScore=clamp(catalogQuality*.55+diversity+limitValue*.2+clamp(35-avgPrice,0,25)*.6,0,100),ad=c.campaign?AD_CAMPAIGNS[c.campaign.size]:null,conversion=tiers.length?subscriptionConversion({offerScore,adBoost:ad?.boost||0,repeatedAds:c.campaignRepeat||0}):.005,targetSubs=Math.round(users*conversion),oldSubs=c.subscribers||0,subs=Math.min(users,Math.round(oldSubs*.45+targetSubs*.55));c.subDelta=subs-oldSubs;c.subscribers=subs;
+    if(tiers.length){const tierWeights=tiers.map(t=>Math.max(.1,(40-t.price)/20)*(c.campaign?.tierId===t.id?1.5:1)),tw=tierWeights.reduce((a,b)=>a+b,0);let distributed=0;tiers.forEach((t,i)=>{const old=t.members||0,next=i===tiers.length-1?subs-distributed:Math.round(subs*tierWeights[i]/tw);t.memberDelta=next-old;t.members=next;distributed+=next;});}
+    const eligible=models.filter(m=>m.access!=="free"),eligibleTotal=eligible.reduce((sum,m)=>sum+m.activeUsers,0)||1;eligible.forEach(m=>m.paidUsers=Math.min(m.activeUsers,Math.round(subs*m.activeUsers/eligibleTotal)));models.filter(m=>m.access==="free").forEach(m=>m.paidUsers=0);
+    c.hype=Math.max(0,c.hype+clamp(c.userDelta/120000+c.subDelta/18000,-14,20)+Math.log10(users+1)*.18);c.metricsHistory.push({round:state.month,users,subscribers:subs,userDelta:c.userDelta,subDelta:c.subDelta});if(c.metricsHistory.length>16)c.metricsHistory.shift();
+  });
 }
 
 function seeded() {
@@ -214,7 +232,7 @@ function estimateBuild(values, type, access, freeLimit, proLimit, c = player(), 
   const comboCost=Math.max(0,modifiers.length-1)*.22;
   const extremeCost=values.reduce((sum,value)=>sum+5*Math.pow(Math.max(0,value-65)/35,3),0);
   const cost = TYPES[type].base + comboCost + extremeCost + (avg ** 2) * .00034 + variance * .013 + (overreach ** 2) * .016 + (access === "free" ? .13 : 0);
-  const time = clamp(1 + Math.floor(avg / 42) + Math.floor(TYPES[type].time/2) + Math.floor(overreach / 12)+(modifiers.length>1?1:0), 1, 3);
+  const time = developmentTime(type,"new",avg,overreach);
   const risk = clamp(overreach * 2.8, 0, 58);
   const expected = clamp(avg + accessBoost - risk * .09, 1, 99);
   const hype = Math.round(TYPES[type].hype + Math.max(0,modifiers.length-1)*4 + Math.max(0, expected - 35) * .55 + (access === "free" ? 8 : access === "paid" ? -3 : 2));
@@ -225,6 +243,9 @@ function notify(companyId, title, text) {
   state.notifications.unshift({id:Date.now()+Math.random(), month:state.month, companyId, unread:true, title, text});
   state.unread++;
 }
+function ledgerFor(c){if(!c.currentLedger||c.currentLedger.round!==state.month)c.currentLedger=emptyLedger(state.month);return c.currentLedger;}
+function bookExpense(c,key,amount){if(!amount)return;c.budget-=amount;const l=ledgerFor(c);l[key]=(l[key]||0)+amount;l.spending+=amount;l.net=l.revenue+l.investmentIncome-l.spending;}
+function bookIncome(c,key,amount){if(!amount)return;c.budget+=amount;const l=ledgerFor(c);if(key==="investmentIncome")l.investmentIncome+=amount;else{l[key]=(l[key]||0)+amount;l.revenue+=amount;}l.net=l.revenue+l.investmentIncome-l.spending;}
 
 function render() {
   if (!state) return;
@@ -245,7 +266,7 @@ function render() {
   $("#unreadCount").textContent = state.unread || "";
   $("#advanceBtn").disabled = state.gameOver;
   $("#advanceBtn").innerHTML = state.gameOver ? "Race finished" : `Advance quarter <svg><use href="#i-arrow"/></svg>`;
-  renderModelRanking(); renderHypeRanking(); renderNotifications(); renderCompanies();
+  renderModelRanking(); renderHypeRanking(); renderNotifications(); renderCompanies();renderFinance();
   save();
 }
 
@@ -259,9 +280,9 @@ function renderModelRanking() {
   list.innerHTML = models.map((m,i)=>{
     const c=company(m.companyId);
     const movement=rankMovement(m,i+1);
-    return `<button class="rank-row ${c.id==="player"?"player-row":""}" data-company="${c.id}">
+    return `<button class="rank-row model-grid ${c.id==="player"?"player-row":""}" data-company="${c.id}">
       <span class="rank-primary"><span class="rank-position"><b class="rank-number ${i<3?"top":""}">${String(i+1).padStart(2,"0")}</b><i class="rank-move ${movement.cls}" title="${movement.label}" aria-label="${movement.label}">${movement.symbol}</i></span>${companyMark(c)}<span class="rank-name"><strong>${escapeHtml(m.name)}</strong><small>Released ${dateLabel(m.releaseMonth)}</small></span></span>
-      <span class="company-cell"><strong>${escapeHtml(c.name)}</strong><small>${money(c.budget)} left</small></span><span class="tag">${modelClassLabel(m)}</span><strong class="score">${m.score.toFixed(1)}</strong><span class="hype-delta">+${m.launchHype}</span>
+      <span class="company-cell"><strong>${escapeHtml(c.name)}</strong><small>${money(c.budget)} left</small></span><span class="tag">${modelClassLabel(m)}</span><strong class="score">${m.score.toFixed(1)}</strong><span class="metric-cell"><strong>${compactNumber(m.activeUsers)}</strong><small>${signedNumber(m.userDelta)} / Q</small></span><span class="hype-delta">+${m.launchHype}</span>
     </button>`;
   }).join("");
 }
@@ -284,22 +305,33 @@ function renderNotifications() {
 
 function renderCompanies() {
   const rows=[...state.companies].sort((a,b)=>b.points-a.points || b.hype-a.hype);
-  $("#companyGrid").innerHTML=rows.map(c=>`<button class="company-card" data-company="${c.id}"><div class="company-card-top">${companyMark(c)}<span class="tag">${c.id==="player"?"You":"Rival"}</span></div><h3>${escapeHtml(c.name)}</h3><p>${c.project?`${escapeHtml(c.project.name)} in development`:"No active project"}</p><div class="company-card-stats"><span><strong>${money(c.budget)}</strong>Budget</span><span><strong>${c.models.filter(m=>m.released).length}</strong>Models</span><span><strong>${compactNumber(c.users)}</strong>Users</span><span><strong>${compactNumber(c.subscribers)}</strong>Subs</span><span><strong>${Math.round(c.hype)}</strong>Hype</span></div></button>`).join("");
+  $("#companyGrid").innerHTML=rows.map(c=>`<button class="company-card" data-company="${c.id}"><div class="company-card-top">${companyMark(c)}<span class="tag">${c.insolvent?"Insolvent":c.id==="player"?"You":"Rival"}</span></div><h3>${escapeHtml(c.name)}</h3><p>${c.project?`${escapeHtml(c.project.name)} · forecast ${forecastLabel(c.project.publicForecast||c.project.estimate)}`:"No active project"}</p><div class="company-card-stats"><span><strong>${money(c.budget)}</strong>Budget</span><span><strong>${c.models.filter(m=>m.released).length}</strong>Models</span><span><strong>${c.project?1:0}</strong>Upcoming</span><span><strong>${compactNumber(c.users)}</strong>Users</span><span><strong>${compactNumber(c.subscribers)}</strong>Subs</span><span><strong>${Math.round(c.hype)}</strong>Hype</span></div></button>`).join("");
+}
+
+function renderFinance(){
+  if(!state)return;const p=player(),current=p.currentLedger||emptyLedger(state.month),history=[...(p.financeHistory||[]),current],totalIncome=history.reduce((s,l)=>s+(l.revenue||0)+(l.investmentIncome||0),0),totalSpend=history.reduce((s,l)=>s+(l.spending||0),0);
+  $("#financeSummary").innerHTML=`<div><span>Quarter income</span><strong>${money((current.revenue||0)+(current.investmentIncome||0))}</strong></div><div><span>Quarter spending</span><strong>${money(current.spending||0)}</strong></div><div><span>Quarter net</span><strong class="${current.net<0?"negative":""}">${current.net<0?"−":"+"}${money(Math.abs(current.net||0))}</strong></div><div><span>All-time cashflow</span><strong>${money(totalIncome)} / ${money(totalSpend)}</strong></div>`;
+  $("#financeBreakdown").innerHTML=[["Subscriptions",current.subscriptionRevenue],["Investments",current.investmentIncome],["Inference",current.inference],["Upkeep",current.upkeep],["Development",current.development],["Research",current.research],["Advertising",current.advertising]].map(([label,value],i)=>`<div><span>${label}</span><strong>${i<2?"+":"−"}${money(value||0)}</strong></div>`).join("");
+  if(current.runwaySavings>0)$("#financeBreakdown").insertAdjacentHTML("beforeend",`<div><span>Runway saved</span><strong class="protected-value">${money(current.runwaySavings)}</strong></div>`);
+  const max=Math.max(.01,...history.flatMap(l=>[(l.revenue||0)+(l.investmentIncome||0),l.spending||0]));$("#financeChart").innerHTML=history.map(l=>`<div class="ledger-bars" title="${dateLabel(l.round)}"><i style="height:${((l.revenue||0)+(l.investmentIncome||0))/max*100}%"></i><b style="height:${(l.spending||0)/max*100}%"></b><small>${QUARTERS[l.round%4]}</small></div>`).join("");
+  $("#financeHistory").innerHTML=history.slice().reverse().map(l=>`<div class="finance-row"><span>${dateLabel(l.round)}</span><strong>+${money((l.revenue||0)+(l.investmentIncome||0))}</strong><strong>−${money(l.spending||0)}</strong><b class="${l.net<0?"negative":""}">${l.net<0?"−":"+"}${money(Math.abs(l.net||0))}</b></div>`).join("")||`<p class="panel-meta">No transactions yet.</p>`;
+  $("#modelFinance").innerHTML=p.models.filter(m=>m.released).sort((a,b)=>b.activeUsers-a.activeUsers).map(m=>`<div class="model-finance-row"><div><strong>${escapeHtml(m.name)}</strong><small>${compactNumber(m.activeUsers)} active · ${m.operatingMode}</small></div><span>+${money(m.revenue)}</span><span>−${money(m.inferenceCost+m.upkeep)}</span><b class="${m.net<0?"negative":""}">${m.net<0?"−":"+"}${money(Math.abs(m.net))}</b></div>`).join("")||`<p class="panel-meta">Release a model to begin financial tracking.</p>`;
 }
 
 function showCompany(id) {
   const c=company(id); if(!c)return;
   const models=[...c.models].filter(m=>m.released).sort((a,b)=>b.releaseMonth-a.releaseMonth);
-  $("#sidePanel").innerHTML=`<div class="panel-top"><div><p class="eyebrow">COMPANY FILE</p><h2>${escapeHtml(c.name)}</h2><p class="panel-meta">${c.id==="player"?"Your company":"Autonomous rival lab"}</p></div><button class="icon-btn close-panel"><svg><use href="#i-close"/></svg></button></div>${c.id==="player"?`<label class="logo-upload-label panel-logo-label">Company logo<span class="logo-upload"><span class="logo-preview">${c.logo?`<img src="${escapeHtml(c.logo)}" alt="Logo preview">`:`<svg><use href="#i-plus"/></svg>`}</span><span class="logo-upload-copy"><strong>${c.logo?"Replace your logo":"Add your logo"}</strong><small>PNG, JPG, WEBP or SVG · max 1.5 MB</small></span><span class="logo-upload-action">Choose file</span><input id="changeCompanyLogo" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml"></span></label>`:""}<div class="panel-stat-grid"><div><span>Budget left</span><strong>${money(c.budget)}</strong></div><div><span>Hype / points</span><strong>${Math.round(c.hype)} / ${c.points}</strong></div></div><div class="audience-summary"><div><span>Active users</span><strong>${compactNumber(c.users)}</strong><small>${signedNumber(c.userDelta)} this quarter</small></div><div><span>Subscribers</span><strong>${compactNumber(c.subscribers)}</strong><small>${signedNumber(c.subDelta)} this quarter</small></div></div>${c.project?`<div class="lock-notice"><strong>${escapeHtml(c.project.name)}</strong> is in development. Expected ${dateLabel(c.project.due)}.</div>`:""}<div class="panel-section"><h3>Model history</h3>${models.length?models.map(m=>`<div class="panel-model"><div><strong>${escapeHtml(m.name)}</strong><small>${modelClassLabel(m)} · ${dateLabel(m.releaseMonth)}${m.audienceFocus?` · ${AUDIENCES[m.audienceFocus].name}`:""}</small></div><strong>${m.score.toFixed(1)}</strong></div>`).join(""):`<p class="panel-meta">No released models. Every lab began at zero.</p>`}</div><div class="panel-section"><h3>Research</h3>${Object.entries(RESEARCH_TRACKS).map(([key,track])=>`<div class="panel-model"><div><strong>${track.name}</strong><small>${c.researchProject?.track===key?`In progress · due ${dateLabel(c.researchProject.due)}`:track.description}</small></div><strong>${RESEARCH_CAPS[c.research?.[key]||0]}</strong></div>`).join("")}</div>`;
+  $("#sidePanel").innerHTML=`<div class="panel-top"><div><p class="eyebrow">COMPANY FILE</p><h2>${escapeHtml(c.name)}</h2><p class="panel-meta">${c.id==="player"?"Your company":"Autonomous rival lab"}</p></div><button class="icon-btn close-panel"><svg><use href="#i-close"/></svg></button></div>${c.id==="player"?`<label class="logo-upload-label panel-logo-label">Company logo<span class="logo-upload"><span class="logo-preview">${c.logo?`<img src="${escapeHtml(c.logo)}" alt="Logo preview">`:`<svg><use href="#i-plus"/></svg>`}</span><span class="logo-upload-copy"><strong>${c.logo?"Replace your logo":"Add your logo"}</strong><small>PNG, JPG, WEBP or SVG · max 1.5 MB</small></span><span class="logo-upload-action">Choose file</span><input id="changeCompanyLogo" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml"></span></label>`:""}<div class="panel-stat-grid"><div><span>Budget left</span><strong>${money(c.budget)}</strong></div><div><span>Hype / points</span><strong>${Math.round(c.hype)} / ${c.points}</strong></div></div><div class="audience-summary"><div><span>Active users</span><strong>${compactNumber(c.users)}</strong><small>${signedNumber(c.userDelta)} this quarter</small></div><div><span>Subscribers</span><strong>${compactNumber(c.subscribers)}</strong><small>${signedNumber(c.subDelta)} this quarter</small></div></div>${c.project?`<div class="upcoming-forecast"><span>UPCOMING · ${dateLabel(c.project.due)}</span><strong>${escapeHtml(c.project.name)}</strong><b>${forecastLabel(c.project.publicForecast||c.project.estimate)}</b><small>Forecasts are intentionally uncertain.</small></div>`:""}<div class="panel-section"><h3>Model history</h3>${models.length?models.map(m=>`<div class="panel-model model-detail"><div><strong>${escapeHtml(m.name)}</strong><small>${modelClassLabel(m)} · ${dateLabel(m.releaseMonth)} · ${compactNumber(m.activeUsers)} users</small>${c.id==="player"?`<div class="operating-picker">${Object.entries(OPERATING_MODES).map(([key,op])=>`<button data-model-mode="${m.id}" data-mode="${key}" class="${m.operatingMode===key?"active":""}" ${key==="lean"&&state.month-m.releaseMonth<2||key==="legacy"&&state.month-m.releaseMonth<4?"disabled":""}>${op.label}</button>`).join("")}</div>`:""}</div><div class="model-detail-numbers"><strong>${m.score.toFixed(1)}</strong><small>${m.net<0?"−":"+"}${money(Math.abs(m.net))}/Q</small></div></div>`).join(""):`<p class="panel-meta">No released models. Every lab began at zero.</p>`}</div><div class="panel-section"><h3>Research</h3>${Object.entries(RESEARCH_TRACKS).map(([key,track])=>`<div class="panel-model"><div><strong>${track.name}</strong><small>${c.researchProject?.track===key?`In progress · due ${dateLabel(c.researchProject.due)}`:track.description}</small></div><strong>${RESEARCH_CAPS[c.research?.[key]||0]}</strong></div>`).join("")}</div>`;
   $("#sidePanel").classList.remove("is-hidden");
   $("#changeCompanyLogo")?.addEventListener("change",async e=>{const file=e.target.files[0];if(!file)return;if(file.size>1.5*1024*1024){toast("Logo must be smaller than 1.5 MB.");return;}c.logo=await fileToDataUrl(file);save();render();showCompany("player");toast("Company logo updated.");});
+  $$('[data-model-mode]').forEach(btn=>btn.addEventListener("click",()=>{const m=c.models.find(x=>x.id===btn.dataset.modelMode);if(!m||btn.disabled)return;m.operatingMode=btn.dataset.mode;save();render();showCompany(c.id);toast(`${m.name} moved to ${OPERATING_MODES[m.operatingMode].label} operations.`);}));
 }
 
 function switchView(view) {
   $$(".nav-btn").forEach(b=>b.classList.toggle("active",b.dataset.view===view));
   $$(".view").forEach(v=>v.classList.remove("active"));
   $(`#${view}View`).classList.add("active");
-  $("#viewTitle").textContent={race:"Model race",hype:"Hype leaderboard",notifications:"Activity",companies:"Companies"}[view];
+  $("#viewTitle").textContent={race:"Model race",hype:"Hype leaderboard",notifications:"Activity",companies:"Companies",finance:"Finance"}[view];
   if(view==="notifications"){state.notifications.forEach(n=>n.unread=false);state.unread=0;render();}
 }
 
@@ -325,7 +357,7 @@ function enhanceSelect(select){
 }
 
 function openModelBuilder() {
-  if(state.gameOver){toast("The 2024–2027 race is over.");return;}
+  if(state.gameOver||player().insolvent){toast(player().insolvent?"Your company is insolvent.":"The 2024–2027 race is over.");return;}
   $("#modelModal").classList.remove("is-hidden"); $("#modalBackdrop").classList.remove("is-hidden");
   const p=player();
   builderAudienceApplied=false;
@@ -338,7 +370,7 @@ function openModelBuilder() {
   $("#modelTier").innerHTML=p.subscriptions.map(s=>`<option value="${s.id}">${escapeHtml(s.name)} · €${s.price}/mo</option>`).join("") || `<option value="">No paid tier created</option>`;
   [$("#modelType"),$("#modelAccess"),$("#modelTier")].forEach(enhanceSelect);
   const ownBest=p.models.filter(m=>m.released).sort((a,b)=>b.score-a.score)[0]?.score||0;
-  const base=clamp(Math.round(Math.max(28,ownBest-2)),20,75); builderValues=Array(CATEGORIES.length).fill(base);
+  const base=clamp(Math.round(Math.max(36,ownBest-2)),20,75); builderValues=Array(CATEGORIES.length).fill(base);
   renderSliders();
   const reasons=[];
   if(state.month===0)reasons.push("Q1 2024 is pre-launch. Advance to Q2 before beginning development.");
@@ -357,7 +389,7 @@ function applyVersionPreset(){
     if(previous?.values)builderValues=[...previous.values];
   }else{
     const ownBest=p.models.filter(m=>m.released).sort((a,b)=>b.score-a.score)[0]?.score||0;
-    builderValues=Array(CATEGORIES.length).fill(clamp(Math.round(Math.max(28,ownBest-2)),20,82));
+    builderValues=Array(CATEGORIES.length).fill(clamp(Math.round(Math.max(36,ownBest-2)),20,82));
   }
   renderSliders();updateEstimate();
 }
@@ -365,42 +397,41 @@ function applyVersionPreset(){
 function closeModal() { $("#modelModal").classList.add("is-hidden"); $("#modalBackdrop").classList.add("is-hidden"); }
 
 function renderSliders(){
-  builderValues=capValues(builderValues,player());
-  $("#categoryGrid").innerHTML=CATEGORIES.map((cat,i)=>{const track=researchTrackForCategory(i),cap=categoryCap(player(),i);return `<div class="slider-row ${track?"research-gated":""}"><label title="${cat}">${cat}${track?`<small>MAX ${cap}</small>`:""}</label><input type="range" min="1" max="${cap}" value="${builderValues[i]}" data-index="${i}" aria-label="${cat}" ${track?`data-research="${track}"`:""}><output>${builderValues[i]}</output></div>`}).join("");
+  const type=primaryType(selectedModifiers());builderValues=capValues(builderValues,player(),type);
+  $("#categoryGrid").innerHTML=CATEGORIES.map((cat,i)=>{const track=researchTrackForCategory(i),cap=categoryCap(player(),i,type),importance=CATEGORY_IMPORTANCE[cat];return `<div class="slider-row ${track?"research-gated":""}"><label title="${cat} · ${importance.label} public impact"><span>${cat}<i class="importance-dots dots-${importance.dots}" aria-label="${importance.label} public importance"></i></span><small>${importance.label.toUpperCase()}${cap<100?` · MAX ${cap}`:""}</small></label><input type="range" min="1" max="${cap}" value="${builderValues[i]}" data-index="${i}" aria-label="${cat}" ${track?`data-research="${track}"`:""}><output>${builderValues[i]}</output></div>`}).join("");
 }
 
 function updateEstimate(){
   const p=player(),family=cleanFamily($("#modelName").value),mode=$("#modelType").value,modifiers=selectedModifiers(),type=primaryType(modifiers),access=$("#modelAccess").value;
-  const e=estimateBuild(builderValues,type,access,+$("#freeLimit").value,+$("#proLimit").value,p,modifiers),finalName=releaseName(p,family,mode,modifiers);
+  const e=estimateBuild(builderValues,type,access,+$("#freeLimit").value,+$("#proLimit").value,p,modifiers),finalName=releaseName(p,family,mode,modifiers);e.time=developmentTime(type,mode,e.avg,Math.max(0,e.avg-e.ceiling));
   const focusHype=builderAudienceApplied?Math.round((currentMarket()?.shares[state.selectedAudience]||0)*10):0;
-  $("#projectedName").textContent=finalName||"Needs version 1"; $("#projectedScore").textContent=e.expected.toFixed(1); $("#projectedCost").textContent=money(e.cost); $("#projectedTime").textContent=`${e.time} qtr`; $("#projectedHype").textContent=`+${e.hype+focusHype}`; $("#labCeiling").textContent=e.ceiling;
+  $("#builderBudget").textContent=money(p.budget);$("#projectedName").textContent=finalName||"Needs version 1"; $("#projectedScore").textContent=e.expected.toFixed(1); $("#projectedCost").textContent=money(e.cost); $("#projectedTime").textContent=`${e.time} qtr`; $("#projectedHype").textContent=`+${e.hype+focusHype}`; $("#labCeiling").textContent=e.ceiling;
   const messages=[];
   if(e.risk>0)messages.push(`${Math.round(e.risk)}% overreach risk: targets exceed current research maturity.`); else messages.push("Targets are within your lab's current research maturity.");
   if(e.extremeCost>.05)messages.push(`Extreme 65–100 specialization adds ${money(e.extremeCost)} to this build.`);
-  if(e.cost>p.budget)messages.push("This project exceeds your remaining budget.");
+  if(e.cost>availableCash(p))messages.push(state.difficulty==="hard"?"This project exceeds your remaining budget.":"This project would spend your protected €0.10M operating reserve.");
   if(mode!=="new"&&!familyModels(p,family).length)messages.push("This path needs an existing released model family.");
   const duplicate=!!finalName&&familyModels(p,family).some(m=>m.name.toLowerCase()===finalName.toLowerCase());if(duplicate)messages.push("That exact version and edition already exists.");
   if(modifiers.includes("pro") && (p.models.filter(m=>m.released).length<1 || state.month<p.proUntil))messages.push(`PRO is locked: release version 1 first and wait until ${dateLabel(Math.max(state.month,p.proUntil))}.`);
   if(access!=="free" && !p.subscriptions.length)messages.push("Create a subscription tier before using paid access.");
   $("#riskText").textContent=messages.join(" ");
   const prelocked=state.month===0||!!p.project||state.month-p.lastLaunch<1;
-  $("#releaseModelBtn").disabled=prelocked||!family||!finalName||duplicate||e.cost>p.budget||(modifiers.includes("pro")&&(p.models.filter(m=>m.released).length<1||state.month<p.proUntil))||(access!=="free"&&!p.subscriptions.length);
+  $("#releaseModelBtn").disabled=prelocked||!family||!finalName||duplicate||e.cost>availableCash(p)||(modifiers.includes("pro")&&(p.models.filter(m=>m.released).length<1||state.month<p.proUntil))||(access!=="free"&&!p.subscriptions.length);
 }
 
 function startPlayerProject(ev){
   ev.preventDefault(); const p=player(); if($("#releaseModelBtn").disabled)return;
   const family=cleanFamily($("#modelName").value); if(!family){toast("Give the model family a name.");return;}
   const mode=$("#modelType").value,modifiers=selectedModifiers(),type=primaryType(modifiers),name=releaseName(p,family,mode,modifiers),versionNumber=nextVersion(p,family,mode,modifiers),access=$("#modelAccess").value,freeLimit=+$("#freeLimit").value,proLimit=+$("#proLimit").value;
-  const e=estimateBuild(builderValues,type,access,freeLimit,proLimit,p,modifiers);
-  p.budget-=e.cost;
+  const e=estimateBuild(builderValues,type,access,freeLimit,proLimit,p,modifiers);e.time=developmentTime(type,mode,e.avg,Math.max(0,e.avg-e.ceiling));
+  bookExpense(p,"development",e.cost);
   const audienceFocus=builderAudienceApplied?state.selectedAudience:null,focusHype=audienceFocus?Math.round((currentMarket()?.shares[audienceFocus]||0)*10):0;
-  p.project={name,family,versionNumber,mode,modifiers,type,access,freeLimit,proLimit,tierId:$("#modelTier").value,values:[...builderValues],audienceFocus,due:state.month+e.time,estimate:e.expected,launchHype:e.hype+focusHype,risk:e.risk,cost:e.cost};
+  const forecastNoise=(seeded()-.5)*(state.difficulty==="hard"?32:20);
+  p.project={name,family,versionNumber,mode,modifiers,type,access,freeLimit,proLimit,tierId:$("#modelTier").value,values:[...builderValues],audienceFocus,due:state.month+e.time,estimate:e.expected,publicForecast:clamp(e.expected+forecastNoise,1,99),launchHype:e.hype+focusHype,risk:e.risk,cost:e.cost};
   if(modifiers.includes("pro"))p.proUntil=state.month+3;
   state.firstDraft="";
   notify("player",`${name} enters development`,`€${e.cost.toFixed(2)}M committed. Expected launch: ${dateLabel(p.project.due)}.`);
-  if(p.budget<=.01){state.gameOver=true;notify("system","Your runway is gone","The company spent its full €10M runway and can no longer operate.");}
   closeModal(); toast(`${name} entered development.`); render();
-  if(state.gameOver)showEnd(true);
 }
 
 function realizeProject(c){
@@ -410,15 +441,16 @@ function realizeProject(c){
   const raw=average(p.values);
   const service=p.access==="paid"?clamp(p.proLimit/800,0,1.5):p.access==="hybrid"?clamp((p.proLimit-p.freeLimit)/1000,0,1):0;
   const score=clamp(Math.min(raw,ceiling+Math.max(0,(raw-ceiling)*.22))+service+noise,1,99);
-  const launchHype=Math.max(4,Math.round(p.launchHype+(score-(releasedModels()[0]?.score||35))*.5));
-  c.models.push({id:`${c.id}-${state.month}-${c.models.length}`,name:p.name,family:p.family,versionNumber:p.versionNumber,mode:p.mode,modifiers:p.modifiers||[],type:p.type,access:p.access,freeLimit:p.freeLimit,proLimit:p.proLimit,values:p.values,audienceFocus:p.audienceFocus||null,score,releaseMonth:state.month,released:true,launchHype});
+  const previousBest=Math.max(0,...c.models.filter(m=>m.released).map(m=>m.score)),popularityFactor=weakReleaseFactor(score,previousBest);
+  const launchHype=Math.max(1,Math.round((p.launchHype+(score-(releasedModels()[0]?.score||35))*.5)*popularityFactor));
+  c.models.push({id:`${c.id}-${state.month}-${c.models.length}`,name:p.name,family:p.family,versionNumber:p.versionNumber,mode:p.mode,modifiers:p.modifiers||[],type:p.type,access:p.access,freeLimit:p.freeLimit,proLimit:p.proLimit,tierId:p.tierId||"",values:p.values,audienceFocus:p.audienceFocus||null,score,releaseMonth:state.month,released:true,launchHype,popularityFactor,operatingMode:"full",activeUsers:25,paidUsers:0,userDelta:25,revenue:0,inferenceCost:0,upkeep:0,net:0,financeHistory:[]});
   c.hype+=launchHype; c.lastLaunch=state.month;
   notify(c.id,`${c.name} releases ${p.name}`,`${modelClassLabel(p)} model debuts at ${score.toFixed(1)} with +${launchHype} hype.`);
   c.project=null;
 }
 
 function rivalStart(c){
-  if(c.project||state.month===0||state.month-c.lastLaunch<1||c.budget<.65)return;
+  if(c.insolvent||c.project||state.month===0||state.month-c.lastLaunch<1||c.budget<.65)return;
   const models=c.models.filter(m=>m.released),released=models.length,s=c.strategy;
   const urgency=(released===0?.72:.38*s.speed+.08)*(state.difficulty==="hard"?1.12:1);
   if(seeded()>urgency)return;
@@ -430,30 +462,47 @@ function rivalStart(c){
   const mode=released===0?"new":modifiers.length&&seeded()<.28?"edition":seeded()<s.update?"update":"new";
   let type=primaryType(modifiers),latest=familyModels(c,family)[0],audienceFocus=seeded()<.62?s.audience:Object.entries(currentMarket()?.shares||{casual:1}).sort((a,b)=>b[1]-a[1])[0][0],audienceWeights=AUDIENCES[audienceFocus].weights;
   const target=clamp(labCeiling(c)-7+s.quality*7+seeded()*7+(modifiers.includes("pro")?3:modifiers.includes("lite")?-5:0),22,95);
-  let values=mode==="update"&&latest?.values?[...latest.values].map((v,i)=>clamp(Math.round(v+1+seeded()*4+(i===s.focus?4:0)+(audienceWeights[CATEGORIES[i]]||0)*4),1,categoryCap(c,i))):CATEGORIES.map((category,i)=>clamp(Math.round(target+(seeded()-.5)*13+(i===s.focus?7:0)+(audienceWeights[category]||0)*10+(modifiers.includes("flash")&&category==="Speed"?12:0)),1,categoryCap(c,i)));
+  let values=mode==="update"&&latest?.values?[...latest.values].map((v,i)=>clamp(Math.round(v+1+seeded()*4+(i===s.focus?4:0)+(audienceWeights[CATEGORIES[i]]||0)*4),1,categoryCap(c,i,type))):CATEGORIES.map((category,i)=>clamp(Math.round(target+(seeded()-.5)*13+(i===s.focus?7:0)+(audienceWeights[category]||0)*10+(modifiers.includes("flash")&&category==="Speed"?12:0)),1,categoryCap(c,i,type)));
   const access=seeded()<s.free?"free":seeded()<.72?"hybrid":"paid",freeLimit=access==="paid"?0:Math.round(6+seeded()*34),proLimit=Math.round(140+seeded()*560);
-  let e=estimateBuild(values,type,access,freeLimit,proLimit,c,modifiers),maxSpend=c.budget*(released===0?.72:.58);
+  if(access!=="free"&&!c.subscriptions.length)c.subscriptions.push({id:`${c.id}-pro`,name:"Pro",price:Math.round(10+seeded()*18),members:0,memberDelta:0});
+  let e=estimateBuild(values,type,access,freeLimit,proLimit,c,modifiers),maxSpend=availableCash(c)*(released===0?.72:.58);
   for(let attempt=0;e.cost>maxSpend&&attempt<8;attempt++){values=values.map((v,i)=>clamp(v>65?v-5:v-2,18,categoryCap(c,i)));e=estimateBuild(values,type,access,freeLimit,proLimit,c,modifiers);}
-  if(e.cost>c.budget){modifiers.length=0;modifiers.push("lite");type="light";values=values.map((v,i)=>clamp(v-8,18,categoryCap(c,i)));e=estimateBuild(values,type,"free",30,200,c,modifiers);}
-  if(e.cost>c.budget)return;
+  if(e.cost>availableCash(c)){modifiers.length=0;modifiers.push("lite");type="light";values=values.map((v,i)=>clamp(v-8,18,categoryCap(c,i)));e=estimateBuild(values,type,"free",30,200,c,modifiers);}
+  if(e.cost>availableCash(c))return;
   const name=releaseName(c,family,mode,modifiers),versionNumber=nextVersion(c,family,mode,modifiers);if(!name)return;
-  c.budget-=e.cost;
-  c.project={name,family,versionNumber,mode,modifiers,type,access,freeLimit,proLimit,values,audienceFocus,due:state.month+e.time,estimate:e.expected,launchHype:e.hype+Math.round((currentMarket()?.shares[audienceFocus]||0)*10),risk:e.risk,cost:e.cost};
+  e.time=developmentTime(type,mode,e.avg,Math.max(0,e.avg-e.ceiling));bookExpense(c,"development",e.cost);
+  c.project={name,family,versionNumber,mode,modifiers,type,access,freeLimit,proLimit,values,audienceFocus,due:state.month+e.time,estimate:e.expected,publicForecast:clamp(e.expected+(seeded()-.5)*(state.difficulty==="hard"?32:20),1,99),launchHype:e.hype+Math.round((currentMarket()?.shares[audienceFocus]||0)*10),risk:e.risk,cost:e.cost};
   if(modifiers.includes("pro"))c.proUntil=state.month+3;
 }
 
 function quarterlyEconomy(){
   state.companies.forEach(c=>{
-    c.hype*=.72;
-    const models=c.models.filter(m=>m.released);
-    if(models.length){
-      const best=Math.max(...models.map(m=>m.score));
-      const revenue=.018+c.hype*.00042+Math.max(0,best-35)*.0009;
-      c.budget+=revenue*3*(c.id==="player"?1:state.difficulty==="hard"?1.12:1);
-      const avgPrice=c.id==="player"&&c.subscriptions.length?average(c.subscriptions.map(s=>s.price)):12;c.budget+=(c.subscribers||0)*avgPrice*3/1000000;
+    const models=c.models.filter(m=>m.released),subscriptionRevenue=(c.subscriptions||[]).reduce((sum,t)=>sum+(t.members||0)*t.price*3/1000000,0);bookIncome(c,"subscriptionRevenue",subscriptionRevenue);
+    const totalPaid=models.reduce((sum,m)=>sum+(m.paidUsers||0),0)||1;
+    const calculate=()=>models.forEach(m=>{const compute=inferenceCost({users:m.activeUsers,subscribers:m.paidUsers,freeLimit:m.access==="paid"?0:m.freeLimit,proLimit:m.proLimit,score:m.score,type:m.type,mode:m.operatingMode});m.revenue=subscriptionRevenue*(m.paidUsers||0)/totalPaid;m.inferenceCost=compute.total;m.upkeep=upkeepCost(m.score,m.type,m.operatingMode);m.net=m.revenue-m.inferenceCost-m.upkeep;});
+    calculate();
+    let planned=models.reduce((s,m)=>s+m.inferenceCost+m.upkeep,0),originalPlanned=planned,protectedRunway=false;
+    if(state.difficulty!=="hard"&&planned>availableCash(c)){
+      const oldest=[...models].sort((a,b)=>a.releaseMonth-b.releaseMonth);
+      for(const m of oldest){if(planned<=availableCash(c))break;if(m.operatingMode==="full"&&state.month-m.releaseMonth>=2){m.operatingMode="lean";calculate();planned=models.reduce((s,x)=>s+x.inferenceCost+x.upkeep,0);}}
+      for(const m of oldest){if(planned<=availableCash(c))break;if(m.operatingMode==="lean"&&state.month-m.releaseMonth>=4){m.operatingMode="legacy";calculate();planned=models.reduce((s,x)=>s+x.inferenceCost+x.upkeep,0);}}
+      const cash=availableCash(c);
+      if(planned>cash&&planned>0){const ratio=clamp(cash/planned,0,1),reach=Math.max(.08,ratio);models.forEach(m=>{m.activeUsers=Math.max(25,Math.round(m.activeUsers*reach));m.paidUsers=Math.min(m.activeUsers,Math.round(m.paidUsers*reach));m.inferenceCost*=ratio;m.upkeep*=ratio;m.net=m.revenue-m.inferenceCost-m.upkeep;});}
+      const finalCost=models.reduce((s,m)=>s+m.inferenceCost+m.upkeep,0),l=ledgerFor(c);l.runwaySavings=(l.runwaySavings||0)+Math.max(0,originalPlanned-finalCost);protectedRunway=true;c.runwaySafeguards=(c.runwaySafeguards||0)+1;c.users=models.reduce((s,m)=>s+m.activeUsers,0);c.subscribers=Math.min(c.users,models.reduce((s,m)=>s+m.paidUsers,0));
     }
+    models.forEach(m=>{m.financeHistory.push({round:state.month,users:m.activeUsers,revenue:m.revenue,cost:m.inferenceCost+m.upkeep,net:m.net});if(m.financeHistory.length>16)m.financeHistory.shift();});
+    const inference=models.reduce((s,m)=>s+m.inferenceCost,0),upkeep=models.reduce((s,m)=>s+m.upkeep,0);bookExpense(c,"inference",inference);bookExpense(c,"upkeep",upkeep);if(state.difficulty!=="hard"&&c.budget<.1)c.budget=.1;const l=ledgerFor(c);l.closing=c.budget;l.net=l.revenue+l.investmentIncome-l.spending;
+    if(protectedRunway&&c.id==="player")notify("system","Runway protection activated","Serving capacity was reduced and eligible older models were moved to cheaper operations. Your €0.10M reserve remains intact.");
+    if(c.campaign)c.campaign=null;
   });
 }
+
+function rollLedgers(){state.companies.forEach(c=>{if(c.currentLedger){c.currentLedger.closing=c.budget;c.currentLedger.net=c.currentLedger.revenue+c.currentLedger.investmentIncome-c.currentLedger.spending;c.financeHistory.push({...c.currentLedger});if(c.financeHistory.length>16)c.financeHistory.shift();}c.currentLedger=emptyLedger(state.month+1);});}
+function companyInvestmentMetrics(c){const best=Math.max(0,...c.models.filter(m=>m.released).map(m=>m.score));return{bestScore:best,projectEstimate:c.project?.estimate||0,hype:c.hype,users:c.users,subscribers:c.subscribers};}
+function requestCompanyInvestment(c,investor,amount){if(c.investmentRequests>=3)return null;c.investmentRequests++;const result=investmentDecision({investor,amount,metrics:companyInvestmentMetrics(c),random:seeded});if(result.accepted){bookIncome(c,"investmentIncome",result.offer);c.investments.push({round:state.month,investor:investor.name,requested:amount,amount:result.offer});notify(c.id,`${investor.name} backs ${c.name}`,`${money(result.offer)} invested after a ${money(amount)} request.`);}else notify(c.id,`${investor.name} declines ${c.name}`,`The ${money(amount)} funding request was rejected.`);return result;}
+function rivalInvestment(c){if(c.investmentRequests>=3||c.budget>2.2||seeded()>.36)return;const investor=INVESTORS[Math.floor(seeded()*INVESTORS.length)],amount=clamp(Math.round((2+c.project?.estimate/15+seeded()*3)*10)/10,1,10);requestCompanyInvestment(c,investor,amount);}
+function rivalAdvertising(c){if(c.insolvent||!c.subscriptions.length||availableCash(c)<.25||seeded()>.22)return;const size=availableCash(c)>5&&seeded()>.6?"large":availableCash(c)>2?"medium":"small",campaign=AD_CAMPAIGNS[size],tier=c.subscriptions[0];if(campaign.cost>availableCash(c))return;bookExpense(c,"advertising",campaign.cost);c.campaignRepeat=c.campaign?.size===size?(c.campaignRepeat||0)+1:0;c.campaign={size,tierId:tier.id};}
+function awardTopThreeStreaks(){const top=releasedModels().sort((a,b)=>b.score-a.score).slice(0,3),present=new Set(top.map(m=>m.companyId));state.companies.forEach(c=>{if(present.has(c.id)){c.top3Streak=(c.top3Streak||0)+1;if(c.top3Streak>=3){c.points++;c.streakPoints=(c.streakPoints||0)+1;notify(c.id,`${c.name} earns a top-three streak point`,`${c.top3Streak} consecutive quarters in the model top three.`);}}else c.top3Streak=0;});}
 
 function processResearch(c){
   const project=c.researchProject;if(!project||project.due>state.month)return;
@@ -463,11 +512,11 @@ function processResearch(c){
 }
 
 function rivalResearch(c){
-  if(c.researchProject||c.budget<1.2||seeded()>.3)return;
+  if(c.insolvent||c.researchProject||availableCash(c)<1.2||seeded()>.3)return;
   const entries=Object.keys(RESEARCH_TRACKS).filter(key=>(c.research[key]||0)<3);if(!entries.length)return;
   const focusTrack=researchTrackForCategory(c.strategy.focus),track=focusTrack&&entries.includes(focusTrack)&&seeded()<.65?focusTrack:entries[Math.floor(seeded()*entries.length)];
-  const level=c.research[track]||0,cost=RESEARCH_TRACKS[track].costs[level];if(cost>=c.budget)return;
-  c.budget-=cost;c.researchProject={track,due:state.month+1,cost};
+  const level=c.research[track]||0,cost=RESEARCH_TRACKS[track].costs[level];if(cost>availableCash(c))return;
+  bookExpense(c,"research",cost);c.researchProject={track,due:state.month+1,cost};
 }
 
 function awardYear(){
@@ -487,19 +536,21 @@ function awardYear(){
   notify("system",`${year} season points awarded`,`${company(modelWinners[0])?.name||"No lab"} wins the model race; ${hypeWinners[0].name} wins hype.${depthText?` Portfolio bonuses: ${depthText}.`:""}`);
 }
 
-function advanceMonth(){
+function advanceMonth(auto=false){
   if(state.gameOver)return;
   if(state.month===TOTAL_ROUNDS-1){awardYear();state.gameOver=true;notify("system","The 2027 race is complete",`${[...state.companies].sort((a,b)=>b.points-a.points)[0].name} wins the era on points.`);render();showEnd();return;}
   if(state.month%4===3)awardYear();
   snapshotModelRanks();
+  rollLedgers();
   state.month++;
-  quarterlyEconomy();
+  state.companies.forEach(c=>c.hype*=.72);
   state.companies.forEach(processResearch);
   state.companies.forEach(realizeProject);
-  state.companies.filter(c=>c.id!=="player").forEach(c=>{rivalResearch(c);rivalStart(c);});
+  state.companies.filter(c=>c.id!=="player").forEach(c=>{rivalInvestment(c);rivalAdvertising(c);rivalResearch(c);rivalStart(c);});
   updateQuarterlyAudience();
-  if(player().budget<=0){state.gameOver=true;notify("system","Your runway is gone","The company can no longer fund operations. The race is over.");showEnd(true);}
-  render(); toast(`${dateLabel()} — new quarter`);
+  quarterlyEconomy();awardTopThreeStreaks();
+  state.companies.forEach(c=>{if(state.difficulty==="hard"&&c.budget<0)c.insolvent=true;});
+  if(!auto){render();toast(`${dateLabel()} — new quarter`);if(player().insolvent&&!state.bankruptcyMode)showBankruptcy();}
 }
 
 function marketChartSvg(history){
@@ -519,9 +570,9 @@ function showAudienceMarket(){
 
 function showResearch(){
   const p=player();
-  $("#sidePanel").innerHTML=`<div class="panel-top"><div><p class="eyebrow">FRONTIER R&D</p><h2>Research lab</h2><p class="panel-meta">Core benchmark fields are open to 100 immediately. Frontier fields require dedicated research.</p></div><button class="icon-btn close-panel"><svg><use href="#i-close"/></svg></button></div>${p.researchProject?`<div class="research-active"><span>ACTIVE PROJECT</span><strong>${RESEARCH_TRACKS[p.researchProject.track].name}</strong><small>Completes ${dateLabel(p.researchProject.due)}</small></div>`:""}<div class="research-list">${Object.entries(RESEARCH_TRACKS).map(([key,track])=>{const level=p.research[key]||0,cap=RESEARCH_CAPS[level],complete=level>=3,cost=complete?0:track.costs[level];return `<article class="research-card"><div class="research-card-top"><div><span>LEVEL ${level} / 3</span><h3>${track.name}</h3></div><strong>${cap}</strong></div><p>${track.description}</p><div class="research-progress"><i style="width:${level/3*100}%"></i></div><div class="research-card-bottom"><small>${complete?"Maximum unlocked":`Next cap ${RESEARCH_CAPS[level+1]} · ${money(cost)} · 1 quarter`}</small><button class="tag research-start" data-track="${key}" ${complete||p.researchProject||cost>=p.budget||state.gameOver?"disabled":""}>${complete?"Complete":"Research"}</button></div></article>`}).join("")}</div>`;
+  $("#sidePanel").innerHTML=`<div class="panel-top"><div><p class="eyebrow">FRONTIER R&D</p><h2>Research lab</h2><p class="panel-meta">Core benchmark fields are open to 100 immediately. Frontier fields require dedicated research.</p></div><button class="icon-btn close-panel"><svg><use href="#i-close"/></svg></button></div>${p.researchProject?`<div class="research-active"><span>ACTIVE PROJECT</span><strong>${RESEARCH_TRACKS[p.researchProject.track].name}</strong><small>Completes ${dateLabel(p.researchProject.due)}</small></div>`:""}<div class="research-list">${Object.entries(RESEARCH_TRACKS).map(([key,track])=>{const level=p.research[key]||0,cap=RESEARCH_CAPS[level],complete=level>=3,cost=complete?0:track.costs[level];return `<article class="research-card"><div class="research-card-top"><div><span>LEVEL ${level} / 3</span><h3>${track.name}</h3></div><strong>${cap}</strong></div><p>${track.description}</p><div class="research-progress"><i style="width:${level/3*100}%"></i></div><div class="research-card-bottom"><small>${complete?"Maximum unlocked":`Next cap ${RESEARCH_CAPS[level+1]} · ${money(cost)} · 1 quarter`}</small><button class="tag research-start" data-track="${key}" ${complete||p.researchProject||cost>=p.budget||state.gameOver||p.insolvent?"disabled":""}>${complete?"Complete":"Research"}</button></div></article>`}).join("")}</div>`;
   $("#sidePanel").classList.remove("is-hidden");
-  $$(".research-start").forEach(btn=>btn.addEventListener("click",()=>{const track=btn.dataset.track,level=p.research[track]||0,cost=RESEARCH_TRACKS[track].costs[level];if(p.researchProject||cost>=p.budget)return;p.budget-=cost;p.researchProject={track,due:state.month+1,cost};notify("player",`${RESEARCH_TRACKS[track].name} research begins`,`${money(cost)} committed. New capability cap arrives in ${dateLabel(p.researchProject.due)}.`);render();showResearch();toast("Research project started.");}));
+  $$(".research-start").forEach(btn=>btn.addEventListener("click",()=>{const track=btn.dataset.track,level=p.research[track]||0,cost=RESEARCH_TRACKS[track].costs[level];if(p.researchProject||cost>availableCash(p)||p.insolvent)return;bookExpense(p,"research",cost);p.researchProject={track,due:state.month+1,cost};notify("player",`${RESEARCH_TRACKS[track].name} research begins`,`${money(cost)} committed. New capability cap arrives in ${dateLabel(p.researchProject.due)}.`);render();showResearch();toast("Research project started.");}));
 }
 
 function showSaves(){
@@ -529,19 +580,27 @@ function showSaves(){
   $("#sidePanel").innerHTML=`<div class="panel-top"><div><p class="eyebrow">GAME ARCHIVE</p><h2>Save / load</h2><p class="panel-meta">Autosave is always on. Named saves let you keep up to eight alternate runs.</p></div><button class="icon-btn close-panel"><svg><use href="#i-close"/></svg></button></div><form id="saveGameForm" class="save-game-form"><input id="saveGameName" maxlength="28" value="${escapeHtml(`${player().name} · ${dateLabel()}`)}" aria-label="Save name"><button class="start-btn" ${slots.length>=8?"disabled":""}>Save current game</button></form><div class="panel-section"><h3>Named saves</h3><div class="save-slot-list">${slots.length?slots.map((slot,i)=>`<div class="save-slot"><div><strong>${escapeHtml(slot.name)}</strong><small>${escapeHtml(slot.company)} · ${escapeHtml(slot.date)} · ${slot.models} models</small></div><div><button class="text-btn load-slot" data-slot="${i}">Load</button><button class="text-btn delete-slot danger" data-slot="${i}">Delete</button></div></div>`).join(""):`<p class="panel-meta">No named saves yet.</p>`}</div></div>`;
   $("#sidePanel").classList.remove("is-hidden");
   $("#saveGameForm").addEventListener("submit",e=>{e.preventDefault();const current=loadSlots();if(current.length>=8)return;const name=$("#saveGameName").value.trim()||`${player().name} ${dateLabel()}`;current.unshift({name,company:player().name,date:dateLabel(),models:player().models.filter(m=>m.released).length,savedAt:Date.now(),data:JSON.parse(JSON.stringify(state))});writeSlots(current);showSaves();toast("Game saved.");});
-  $$(".load-slot").forEach(btn=>btn.addEventListener("click",async()=>{const slot=loadSlots()[+btn.dataset.slot];if(!slot)return;if(slot.data?.difficulty==="hard"&&!await hasHardEntitlement()){toast("Unlock Hard Mode before loading this save.");return;}state=JSON.parse(JSON.stringify(slot.data));migrateState();save();render();$("#sidePanel").classList.add("is-hidden");toast(`Loaded ${slot.name}.`);}));
+  $$(".load-slot").forEach(btn=>btn.addEventListener("click",()=>{const slot=loadSlots()[+btn.dataset.slot];if(!slot)return;state=JSON.parse(JSON.stringify(slot.data));migrateState();save();render();$("#sidePanel").classList.add("is-hidden");toast(`Loaded ${slot.name}.`);}));
   $$(".delete-slot").forEach(btn=>btn.addEventListener("click",()=>{const current=loadSlots();current.splice(+btn.dataset.slot,1);writeSlots(current);showSaves();toast("Save deleted.");}));
 }
 
 function showSubscriptions(){
   const p=player();
-  $("#sidePanel").innerHTML=`<div class="panel-top"><div><p class="eyebrow">MONETIZATION</p><h2>Subscriptions</h2><p class="panel-meta">Members pay monthly; game revenue is booked once per quarter. Model access and limits shape adoption.</p></div><button class="icon-btn close-panel"><svg><use href="#i-close"/></svg></button></div><div class="panel-section"><h3>Your tiers</h3>${p.subscriptions.map(s=>`<div class="sub-tier"><div><strong>${escapeHtml(s.name)}</strong><p>€${s.price}/month · ${s.members.toLocaleString()} members</p></div><span>${money(s.members*s.price/1000000)}/mo</span></div>`).join("")||`<p class="panel-meta">No paid tiers yet.</p>`}</div><div class="panel-section"><h3>Create tier (max 3)</h3><form id="tierForm" class="panel-form"><input id="tierName" maxlength="18" placeholder="Tier name" required><input id="tierPrice" type="number" min="3" max="200" value="19" required><button class="start-btn" ${p.subscriptions.length>=3?"disabled":""}>Create subscription</button></form></div>`;
+  $("#sidePanel").innerHTML=`<div class="panel-top"><div><p class="eyebrow">MONETIZATION</p><h2>Subscriptions</h2><p class="panel-meta">Offers, model access and advertising determine conversion. Revenue and serving costs settle every quarter.</p></div><button class="icon-btn close-panel"><svg><use href="#i-close"/></svg></button></div><div class="panel-section"><h3>Your tiers</h3>${p.subscriptions.map(s=>`<div class="sub-tier expanded"><div><strong>${escapeHtml(s.name)}</strong><p>€${s.price}/month · ${compactNumber(s.members)} members · ${signedNumber(s.memberDelta)} / Q</p><small>${money(s.members*s.price*3/1000000)} quarterly gross</small></div><button class="text-btn delete-tier danger" data-tier="${s.id}">Delete</button><div class="tier-advertise"><span>Advertise for one quarter</span>${Object.entries(AD_CAMPAIGNS).map(([key,ad])=>`<button class="tag advertise-tier" data-tier="${s.id}" data-size="${key}" ${p.campaign||p.insolvent||p.budget<ad.cost?"disabled":""}>${ad.label} · ${money(ad.cost)}</button>`).join("")}</div></div>`).join("")||`<p class="panel-meta">No paid tiers yet.</p>`}</div><div id="tierReassign"></div><div class="panel-section"><h3>Create tier (max 3)</h3><form id="tierForm" class="panel-form"><input id="tierName" maxlength="18" placeholder="Tier name" required><input id="tierPrice" type="number" min="3" max="200" value="19" required><button class="start-btn" ${p.subscriptions.length>=3||p.insolvent?"disabled":""}>Create subscription</button></form></div>`;
   $("#sidePanel").classList.remove("is-hidden");
   $("#tierForm")?.addEventListener("submit",e=>{e.preventDefault();if(p.subscriptions.length>=3)return;const name=$("#tierName").value.trim();const price=+$("#tierPrice").value||19;p.subscriptions.push({id:`tier-${Date.now()}`,name,price,members:0});showSubscriptions();render();toast(`${name} subscription created.`);});
+  $$(".advertise-tier").forEach(btn=>btn.addEventListener("click",()=>{const ad=AD_CAMPAIGNS[btn.dataset.size];if(p.campaign||p.insolvent||ad.cost>availableCash(p))return;const repeated=p.lastCampaignSize===btn.dataset.size?(p.campaignRepeat||0)+1:0;p.campaignRepeat=repeated;p.lastCampaignSize=btn.dataset.size;p.campaign={size:btn.dataset.size,tierId:btn.dataset.tier};bookExpense(p,"advertising",ad.cost);notify("player",`${ad.label} subscription campaign begins`,`${money(ad.cost)} committed for ${dateLabel()}. Repeated campaigns have diminishing returns.`);render();showSubscriptions();toast("Advertising campaign launched.");}));
+  $$(".delete-tier").forEach(btn=>btn.addEventListener("click",()=>{const tier=p.subscriptions.find(t=>t.id===btn.dataset.tier),affected=p.models.filter(m=>m.tierId===tier.id&&m.access!=="free");if(!affected.length){p.subscriptions=p.subscriptions.filter(t=>t.id!==tier.id);render();showSubscriptions();toast(`${tier.name} deleted.`);return;}const targets=p.subscriptions.filter(t=>t.id!==tier.id);$("#tierReassign").innerHTML=`<div class="reassign-box"><strong>Reassign ${affected.length} attached model${affected.length===1?"":"s"}</strong><p>Choose another subscription or make those models free before deleting ${escapeHtml(tier.name)}.</p><select id="tierReassignTarget"><option value="free">Make affected models free</option>${targets.map(t=>`<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("")}</select><button id="confirmTierDelete" class="start-btn">Reassign & delete</button></div>`;enhanceSelect($("#tierReassignTarget"));$("#confirmTierDelete").addEventListener("click",()=>{const target=$("#tierReassignTarget").value;affected.forEach(m=>{if(target==="free"){m.access="free";m.tierId="";m.freeLimit=Math.max(12,m.freeLimit||0);}else m.tierId=target;});p.subscriptions=p.subscriptions.filter(t=>t.id!==tier.id);render();showSubscriptions();toast(`${tier.name} deleted and models reassigned.`);});}));
+}
+
+function showInvestments(){
+  const p=player(),remaining=3-(p.investmentRequests||0);
+  $("#sidePanel").innerHTML=`<div class="panel-top"><div><p class="eyebrow">CAPITAL PARTNERS</p><h2>Investments</h2><p class="panel-meta">You have ${remaining} of 3 lifetime requests left. Every pitch counts, including rejections.</p></div><button class="icon-btn close-panel"><svg><use href="#i-close"/></svg></button></div><label class="investment-amount">Requested funding <strong id="investmentAmountLabel">€3.0M</strong><input id="investmentAmount" type="range" min="1" max="10" step=".5" value="3"></label><div class="investor-list">${INVESTORS.map(i=>`<button class="investor-card" data-investor="${i.id}" ${remaining<=0?"disabled":""}><img src="${i.logo}" alt="${i.name} logo"><span><strong>${i.name}</strong><small>${i.label}</small></span><b>Request</b></button>`).join("")}</div><div class="panel-section"><h3>Funding history</h3>${p.investments.length?p.investments.slice().reverse().map(i=>`<div class="panel-model"><div><strong>${escapeHtml(i.investor)}</strong><small>${dateLabel(i.round)} · requested ${money(i.requested)}</small></div><strong>+${money(i.amount)}</strong></div>`).join(""):`<p class="panel-meta">No accepted investments.</p>`}</div>`;
+  $("#sidePanel").classList.remove("is-hidden");$("#investmentAmount").addEventListener("input",e=>$("#investmentAmountLabel").textContent=`€${(+e.target.value).toFixed(1)}M`);$$(".investor-card").forEach(btn=>btn.addEventListener("click",()=>{const investor=INVESTORS.find(i=>i.id===btn.dataset.investor),amount=+$("#investmentAmount").value,result=requestCompanyInvestment(p,investor,amount);render();showInvestments();toast(result?.accepted?`${investor.name} offered ${money(result.offer)}.`:`${investor.name} declined the request.`);}));
 }
 
 function showRules(){
-  $("#sidePanel").innerHTML=`<div class="panel-top"><div><p class="eyebrow">GAME SYSTEM</p><h2>Rules & scoring</h2></div><button class="icon-btn close-panel"><svg><use href="#i-close"/></svg></button></div><ul class="rules-list"><li>The race has 16 turns: Q1–Q4 of 2024, 2025, 2026 and 2027. Q1 2024 is pre-launch.</li><li>The benchmark contains 25 essential AI capabilities—no filler subjects such as history, geography or law.</li><li>About 70% of public demand comes from casual users. Every audience values a different mix of benchmark categories.</li><li>Quarterly users, subscribers and their gains or losses directly affect company hype and revenue.</li><li>Core fields such as mathematics, coding and reasoning can be targeted at 100 immediately, but a single 100 adds roughly €5M in extreme-specialization cost.</li><li>Image generation, vision, audio, video, agents and massive context begin capped at 25. Three costly research levels raise the cap to 50, 75 and 100.</li><li>The audience focus preset is disabled for the player in Hard mode; manual benchmark design remains available.</li><li>Every model family starts automatically at version 1. New generation advances the whole number; Updated version advances by .1.</li><li>Combining Updated version with PRO creates the half-step PRO release, such as Zemmi 1.5 PRO.</li><li>At each Q4 close, each company’s best model competes for 10 / 8 / 6 / 4 / 2 race points. A company with multiple models in the top 15 earns a portfolio bonus equal to its model count.</li><li>Hype points go 5 / 3 / 2 / 1. All market and scoring rules apply equally to every company.</li></ul><button id="resetGame" class="utility-btn danger">Reset this game <span>×</span></button>`;
+  $("#sidePanel").innerHTML=`<div class="panel-top"><div><p class="eyebrow">GAME SYSTEM</p><h2>Rules & scoring</h2></div><button class="icon-btn close-panel"><svg><use href="#i-close"/></svg></button></div><ul class="rules-list"><li>The race has 16 turns: Q1–Q4 of 2024 through 2027. Q1 2024 is pre-launch.</li><li>Public category importance, audience demand, freshness, class and relative quality determine model users and hype.</li><li>Every released model keeps a small residual audience. Users and subscribers can grow or fall each quarter.</li><li>Free and paid daily messages consume inference budget. Heavy models, high limits and large audiences cost substantially more.</li><li>LITE and FLASH release in one quarter with strict capability caps. PRO is powerful but expensive and has a three-quarter cooldown.</li><li>Old models can move to Lean or Legacy operations to trade reach and limits for lower upkeep.</li><li>Starting with a company’s third consecutive quarter represented in the model top three, it earns +1 streak point each continuing quarter.</li><li>At each Q4 close, company-best models earn 10 / 8 / 6 / 4 / 2 points, portfolio depth adds points, and hype earns 5 / 3 / 2 / 1.</li><li>Each company has three lifetime investment requests. Rejections count, actual chances are hidden and accepted offers may be partial.</li><li>Insolvency occurs only when quarterly spending closes above all income and available cash. The race then continues in observer mode.</li><li>All economy, investment, model and scoring rules apply equally to rivals.</li></ul><button id="resetGame" class="utility-btn danger">Reset this game <span>×</span></button>`;
   $("#sidePanel").classList.remove("is-hidden");
   $("#resetGame").addEventListener("click",()=>{if(confirm("Reset the entire race?")){localStorage.removeItem(STORAGE_KEY);location.reload();}});
 }
@@ -552,9 +611,20 @@ function showNewGame(){
   $("#confirmNewGame").addEventListener("click",()=>{localStorage.removeItem(STORAGE_KEY);location.reload();});
 }
 
-function showEnd(bankrupt=false){
-  const ordered=[...state.companies].sort((a,b)=>b.points-a.points||b.hype-a.hype);const pos=ordered.findIndex(c=>c.id==="player")+1;
-  $("#sidePanel").innerHTML=`<div class="panel-top"><p class="eyebrow">FINAL REPORT / 2027</p><button class="icon-btn close-panel"><svg><use href="#i-close"/></svg></button></div><div class="end-card"><p>${bankrupt?"RUNWAY EXHAUSTED":"FOUR-YEAR ERA COMPLETE"}</p><div class="final-score">#${pos}</div><h2>${escapeHtml(player().name)}</h2><p>${player().points} points · ${player().models.filter(m=>m.released).length} models · ${money(player().budget)} left</p><p>Champion: ${escapeHtml(ordered[0].name)} with ${ordered[0].points} points.</p></div>`;
+function showMobileMenu(){
+  $("#sidePanel").innerHTML=`<div class="panel-top"><div><p class="eyebrow">GAME CONTROL</p><h2>Menu</h2><p class="panel-meta">Manage the company, its financing and the current run.</p></div><button class="icon-btn close-panel"><svg><use href="#i-close"/></svg></button></div><div class="mobile-action-list"><button data-mobile-action="model">New model <span>＋</span></button><button data-mobile-action="market">Market interest <span>→</span></button><button data-mobile-action="research">Research lab <span>→</span></button><button data-mobile-action="subscriptions">Subscriptions <span>→</span></button><button data-mobile-action="investments">Investments <span>→</span></button><button data-mobile-action="saves">Save / load <span>→</span></button><button data-mobile-action="rules">Rules & scoring <span>→</span></button><button data-mobile-action="new">New game <span>＋</span></button></div>`;
+  $("#sidePanel").classList.remove("is-hidden");
+  const actions={model:()=>{$("#sidePanel").classList.add("is-hidden");openModelBuilder();},market:showAudienceMarket,research:showResearch,subscriptions:showSubscriptions,investments:showInvestments,saves:showSaves,rules:showRules,new:showNewGame};
+  $$("[data-mobile-action]").forEach(button=>button.addEventListener("click",()=>actions[button.dataset.mobileAction]?.()));
+}
+
+function showBankruptcy(){
+  $("#sidePanel").innerHTML=`<div class="panel-top"><div><p class="eyebrow">RUNWAY EXHAUSTED</p><h2>Continue as observer</h2></div></div><div class="bankruptcy-card"><p>Your company’s quarterly spending exceeded all income and available cash. You can no longer fund projects, but the AI race will continue.</p><button id="simulateEnd" class="start-btn">Simulate to Q4 2027 <svg><use href="#i-arrow"/></svg></button><button id="manualObserve" class="utility-btn">Advance manually each quarter <span>→</span></button></div>`;$("#sidePanel").classList.remove("is-hidden");$("#simulateEnd").addEventListener("click",simulateToEnd);$("#manualObserve").addEventListener("click",()=>{state.bankruptcyMode="manual";save();$("#sidePanel").classList.add("is-hidden");toast("Observer mode enabled. Advance each quarter when ready.");});
+}
+function simulateToEnd(){state.bankruptcyMode="simulated";while(!state.gameOver)advanceMonth(true);render();showEnd();}
+function showEnd(){
+  const ordered=[...state.companies].sort((a,b)=>b.points-a.points||b.hype-a.hype),models=releasedModels().sort((a,b)=>b.score-a.score),p=player(),pos=ordered.findIndex(c=>c.id==="player")+1,history=[...(p.financeHistory||[]),p.currentLedger||emptyLedger(state.month)],income=history.reduce((s,l)=>s+(l.revenue||0)+(l.investmentIncome||0),0),spending=history.reduce((s,l)=>s+(l.spending||0),0);
+  $("#sidePanel").innerHTML=`<div class="panel-top"><div><p class="eyebrow">FINAL REPORT / 2027</p><h2>The era is complete</h2></div><button class="icon-btn close-panel"><svg><use href="#i-close"/></svg></button></div><div class="end-card"><p>${p.insolvent?"FINISHED IN OBSERVER MODE":"FOUR-YEAR ERA COMPLETE"}</p><div class="final-score">#${pos}</div><h2>${escapeHtml(p.name)}</h2><p>${p.points} points · ${compactNumber(p.users)} users · ${compactNumber(p.subscribers)} subscribers</p><p>Champion: ${escapeHtml(ordered[0].name)} with ${ordered[0].points} points.</p></div><div class="final-grid"><div><span>Total income</span><strong>${money(income)}</strong></div><div><span>Total spending</span><strong>${money(spending)}</strong></div><div><span>Investments</span><strong>${money(p.investments.reduce((s,i)=>s+i.amount,0))}</strong></div><div><span>Closing budget</span><strong>${money(p.budget)}</strong></div></div><div class="panel-section"><h3>Your final model positions</h3>${p.models.filter(m=>m.released).sort((a,b)=>b.score-a.score).map(m=>`<div class="panel-model"><div><strong>#${models.findIndex(x=>x.id===m.id)+1} ${escapeHtml(m.name)}</strong><small>${compactNumber(m.activeUsers)} active users · ${m.operatingMode}</small></div><strong>${m.score.toFixed(1)}</strong></div>`).join("")||`<p class="panel-meta">No released models.</p>`}</div><div class="panel-section"><h3>Final company podium</h3>${ordered.slice(0,5).map((c,i)=>`<div class="panel-model"><div><strong>#${i+1} ${escapeHtml(c.name)}</strong><small>${compactNumber(c.users)} users · ${c.models.filter(m=>m.released).length} models</small></div><strong>${c.points} pts</strong></div>`).join("")}</div>`;
   $("#sidePanel").classList.remove("is-hidden");
 }
 
@@ -562,71 +632,27 @@ function escapeHtml(s){return String(s??"").replace(/[&<>'"]/g,c=>({"&":"&amp;",
 function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");clearTimeout(toast.timer);toast.timer=setTimeout(()=>t.classList.remove("show"),2400);}
 function fileToDataUrl(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file);});}
 
-async function apiRequest(path, options={}){
-  const response=await fetch(path,{headers:{"Content-Type":"application/json",...(options.headers||{})},...options});
-  const data=await response.json().catch(()=>({}));
-  if(!response.ok)throw new Error(data.error||"Payment service unavailable.");
-  return data;
-}
-async function hasHardEntitlement(){
-  const token=localStorage.getItem(HARD_ENTITLEMENT_KEY);if(!token)return false;
-  try{const result=await apiRequest("/api/hard-mode/entitlement",{method:"POST",body:JSON.stringify({token})});return result.valid===true;}catch{return false;}
-}
-function setHardModeAccess(unlocked){
-  const option=$("#hardModeOption"),input=option.querySelector("input"),button=$("#unlockHardModeBtn");
-  input.disabled=!unlocked;option.classList.toggle("locked",!unlocked);option.classList.toggle("unlocked",unlocked);
-  $("#hardModeBadge").textContent=unlocked?"OWNED":"LOCKED";
-  button.disabled=unlocked;button.innerHTML=unlocked?"<span>Hard Mode unlocked</span><strong>OWNED</strong>":"<span>Unlock Hard Mode</span><strong>€2.99 once</strong>";
-}
-async function beginHardModeCheckout(){
-  const button=$("#unlockHardModeBtn");button.disabled=true;button.innerHTML="<span>Opening secure checkout…</span><strong>€2.99</strong>";
-  try{
-    if(!window.Paddle)throw new Error("Paddle Checkout could not load.");
-    if(!paddleConfig)paddleConfig=await apiRequest("/api/hard-mode/config");
-    if(!paddleReady){
-      if(paddleConfig.environment==="sandbox")Paddle.Environment.set("sandbox");
-      Paddle.Initialize({token:paddleConfig.clientToken,eventCallback:handlePaddleEvent});paddleReady=true;
-    }
-    Paddle.Checkout.open({items:[{priceId:paddleConfig.priceId,quantity:1}],customData:{entitlement:"hard_mode"},settings:{displayMode:"overlay",theme:"dark",locale:"en"}});
-  }catch(error){setHardModeAccess(false);toast(error.message);}
-}
-async function handlePaddleEvent(event){
-  if(event.name==="checkout.closed"){setHardModeAccess(false);return;}
-  if(event.name!=="checkout.completed")return;
-  try{
-    const result=await apiRequest("/api/hard-mode/verify",{method:"POST",body:JSON.stringify({transactionId:event.data.transaction_id})});
-    localStorage.setItem(HARD_ENTITLEMENT_KEY,result.token);setHardModeAccess(true);$("#hardModeOption input").checked=true;toast("Hard Mode unlocked.");
-  }catch(error){setHardModeAccess(false);toast(error.message);}
-}
-async function initializeHardModePayment(){
-  setHardModeAccess(await hasHardEntitlement());
-}
-
 function bind(){
-  $("#unlockHardModeBtn").addEventListener("click",beginHardModeCheckout);
   $("#companyLogo").addEventListener("change",async e=>{
     const file=e.target.files[0]; if(!file)return;
     if(file.size>1.5*1024*1024){e.target.value="";$("#logoPreview").innerHTML=`<svg><use href="#i-plus"/></svg>`;toast("Logo must be smaller than 1.5 MB.");return;}
     const data=await fileToDataUrl(file);$("#logoPreview").innerHTML=`<img src="${data}" alt="Logo preview">`;
   });
-  $("#setupForm").addEventListener("submit",async e=>{e.preventDefault();const difficulty=new FormData(e.target).get("difficulty");if(difficulty==="hard"&&!await hasHardEntitlement()){setHardModeAccess(false);toast("Hard Mode requires an unlock.");return;}const file=$("#companyLogo").files[0];if(!file){toast("Upload a company logo to continue.");return;}if(file.size>1.5*1024*1024){toast("Logo must be smaller than 1.5 MB.");return;}const logo=await fileToDataUrl(file);state=newGame($("#companyName").value,$("#firstModelName").value,difficulty,logo);render();});
-  $$(".nav-btn").forEach(b=>b.addEventListener("click",()=>switchView(b.dataset.view)));
-  $("#advanceBtn").addEventListener("click",advanceMonth); $("#newModelBtn").addEventListener("click",openModelBuilder);
+  $("#setupForm").addEventListener("submit",async e=>{e.preventDefault();const difficulty=new FormData(e.target).get("difficulty"),file=$("#companyLogo").files[0];if(file?.size>1.5*1024*1024){toast("Logo must be smaller than 1.5 MB.");return;}const logo=file?await fileToDataUrl(file):null;state=newGame($("#companyName").value,$("#firstModelName").value,difficulty,logo);render();});
+  $$(".nav-btn[data-view]").forEach(b=>b.addEventListener("click",()=>switchView(b.dataset.view)));
+  $("#advanceBtn").addEventListener("click",()=>advanceMonth(false)); $("#newModelBtn").addEventListener("click",openModelBuilder);
   $("#modelForm").addEventListener("submit",startPlayerProject); $("#modalBackdrop").addEventListener("click",closeModal); $$(".close-modal").forEach(b=>b.addEventListener("click",closeModal));
   $("#categoryGrid").addEventListener("input",e=>{if(e.target.type==="range"){const i=+e.target.dataset.index;builderValues[i]=+e.target.value;e.target.nextElementSibling.value=e.target.value;updateEstimate();}});
   ["modelAccess","modelTier","freeLimit","proLimit"].forEach(id=>$(`#${id}`).addEventListener("input",updateEstimate));
-  $("#modelType").addEventListener("change",applyVersionPreset);$("#modelName").addEventListener("change",applyVersionPreset);$$(".edition-picker input").forEach(x=>x.addEventListener("change",updateEstimate));
+  $("#modelType").addEventListener("change",applyVersionPreset);$("#modelName").addEventListener("change",applyVersionPreset);$$(".edition-picker input").forEach(x=>x.addEventListener("change",()=>{if(x.checked)$$('.edition-picker input').filter(y=>y!==x).forEach(y=>y.checked=false);renderSliders();updateEstimate();}));
   $("#balanceSliders").addEventListener("click",()=>{builderValues=Array(CATEGORIES.length).fill(clamp(labCeiling()-5,20,80));builderAudienceApplied=false;renderSliders();updateEstimate();});
   $("#audienceFocusBtn").addEventListener("click",applyAudiencePreset);
   document.addEventListener("click",e=>{const target=e.target.closest("[data-company]");if(target&&!target.classList.contains("nav-btn"))showCompany(target.dataset.company);if(e.target.closest(".close-panel"))$("#sidePanel").classList.add("is-hidden");});
   document.addEventListener("click",e=>{if(!e.target.closest(".custom-select"))document.querySelectorAll(".custom-select.open").forEach(x=>{x.classList.remove("open");x.querySelector(".custom-select-trigger").setAttribute("aria-expanded","false")});});
   $("#markReadBtn").addEventListener("click",()=>{state.notifications.forEach(n=>n.unread=false);state.unread=0;render();});
-  $("#newGameMenuBtn").addEventListener("click",showNewGame); $("#savesBtn").addEventListener("click",showSaves); $("#audienceBtn").addEventListener("click",showAudienceMarket); $("#researchBtn").addEventListener("click",showResearch); $("#subscriptionsBtn").addEventListener("click",showSubscriptions); $("#rulesBtn").addEventListener("click",showRules);
+  $("#newGameMenuBtn").addEventListener("click",showNewGame); $("#savesBtn").addEventListener("click",showSaves); $("#audienceBtn").addEventListener("click",showAudienceMarket); $("#researchBtn").addEventListener("click",showResearch); $("#subscriptionsBtn").addEventListener("click",showSubscriptions);$("#investmentsBtn").addEventListener("click",showInvestments); $("#rulesBtn").addEventListener("click",showRules);$("#mobileMenuBtn").addEventListener("click",showMobileMenu);
   document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeModal();$("#sidePanel").classList.add("is-hidden");}});
 }
 
-async function initializeApp(){
-  bind();await initializeHardModePayment();state=load();
-  if(state){migrateState();if(state.difficulty==="hard"&&!await hasHardEntitlement()){state=null;toast("This save needs the Hard Mode unlock.");return;}render();}
-}
+function initializeApp(){bind();localStorage.removeItem("benchmark-hard-mode-entitlement-v1");state=load();if(state){migrateState();render();}else $("#setupScreen").classList.remove("is-hidden");}
 initializeApp();

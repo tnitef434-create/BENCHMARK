@@ -2,10 +2,8 @@
   "name": "benchmark-ai-race",
   "private": true,
   "type": "module",
-  "scripts": {"start": "node server.mjs"},
+  "scripts": {"start": "node server.mjs", "test": "node --test"},
   "dependencies": {
-    "@paddle/paddle-node-sdk": "^3.8.0",
-    "dotenv": "^16.4.7",
     "express": "^5.1.0"
   }
 }

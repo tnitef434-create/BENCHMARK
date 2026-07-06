@@ -1,0 +1,6 @@
+.mobile-menu-btn{display:none!important}
+.finance-breakdown{grid-template-columns:repeat(auto-fit,minmax(92px,1fr))!important}
+.mobile-action-list{display:grid;margin-top:24px;border-top:1px solid #292929}
+.mobile-action-list button{border:0;border-bottom:1px solid #292929;background:none;color:#ddd;padding:17px 4px;display:flex;justify-content:space-between;text-align:left;transition:padding .15s,background .15s}
+.mobile-action-list button:hover{background:#151515;padding-left:10px}
+@media(max-width:620px){.nav{grid-template-columns:repeat(6,1fr)!important}.mobile-menu-btn{display:grid!important}}

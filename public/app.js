@@ -63,6 +63,8 @@ let state = null;
 let builderValues = Array(CATEGORIES.length).fill(30);
 let builderAudienceApplied = false;
 let modelCompanyFilter = "all";
+let builderDirty = false;
+let builderLastSaved = "";
 const CATEGORY_IMPORTANCE=categoryImportance(CATEGORIES,AUDIENCES);
 
 const $ = (s) => document.querySelector(s);
@@ -104,6 +106,47 @@ function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 function load() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch { return null; } }
 function loadSlots(){try{return JSON.parse(localStorage.getItem(SAVE_SLOTS_KEY))||[];}catch{return[];}}
 function writeSlots(slots){localStorage.setItem(SAVE_SLOTS_KEY,JSON.stringify(slots));}
+function currentModelDraft(){
+  return {
+    family:$("#modelName")?.value||"",
+    mode:$("#modelType")?.value||"new",
+    access:$("#modelAccess")?.value||"hybrid",
+    tierId:$("#modelTier")?.value||"",
+    freeLimit:+($("#freeLimit")?.value||12),
+    proLimit:+($("#proLimit")?.value||200),
+    values:[...builderValues],
+    audienceApplied:builderAudienceApplied
+  };
+}
+function serializeDraft(draft){return JSON.stringify(draft);}
+function markBuilderDirty(){builderDirty=serializeDraft(currentModelDraft())!==builderLastSaved;}
+function saveModelDraft(showToast=true){
+  const p=player();if(!p)return;
+  p.modelDraft=currentModelDraft();
+  builderLastSaved=serializeDraft(p.modelDraft);
+  builderDirty=false;
+  save();
+  if(showToast)toast("Model draft saved.");
+}
+function restoreModelDraft(p){
+  const draft=p.modelDraft;
+  if(!draft)return false;
+  $("#modelName").value=draft.family||"";
+  $("#modelType").value=draft.mode||"new";
+  $("#modelAccess").value=draft.access||"hybrid";
+  $("#freeLimit").value=draft.freeLimit ?? 12;
+  $("#proLimit").value=draft.proLimit ?? 200;
+  builderValues=Array.isArray(draft.values)&&draft.values.length===CATEGORIES.length?[...draft.values]:builderValues;
+  builderAudienceApplied=Boolean(draft.audienceApplied);
+  requestAnimationFrame(()=>{if($("#modelTier")){$("#modelTier").value=draft.tierId||$("#modelTier").value||"";refreshCustomSelect($("#modelTier"));}});
+  builderLastSaved=serializeDraft(draft);
+  builderDirty=false;
+  return true;
+}
+function confirmCloseModelBuilder(){
+  if(builderDirty&&!confirm("You have unsaved model draft changes. Close without saving?"))return;
+  closeModal();
+}
 function migrateBenchmarkValues(values){
   if(!Array.isArray(values))return Array(CATEGORIES.length).fill(25);
   if(values.length===CATEGORIES.length)return [...values];
@@ -139,6 +182,7 @@ function migrateState(){
     c.users||=0;c.subscribers||=0;c.userDelta||=0;c.subDelta||=0;c.metricsHistory||=[];c.financeHistory||=[];c.currentLedger||=emptyLedger(state.month||0);
     c.top3Streak||=0;c.streakPoints||=0;c.campaign??=null;c.campaignRepeat||=0;c.investmentRequests||=0;c.investments||=[];c.insolvent||=false;
     c.research||={scale:0,vision:0,audio:0,video:0};c.researchProject||=null;
+    c.modelDraft ||= null;
     if(c.project&&c.project.publicForecast==null)c.project.publicForecast=clamp(c.project.estimate||average(c.project.values||[40]),1,99);
     c.subscriptions||=[];c.subscriptions.forEach(t=>{t.members||=0;t.memberDelta||=0;});
     c.models.forEach((m,j)=>{m.id ||= `${c.id}-${m.releaseMonth}-${j}`;m.family ||= cleanFamily(m.name);m.versionNumber ||= j+1;m.modifiers ||= m.type==="pro"?["pro"]:m.type==="light"?["lite"]:m.type==="flash"?["flash"]:[];if(m.modifiers.length>1)m.modifiers=[m.modifiers.includes("pro")?"pro":m.modifiers.includes("flash")?"flash":"lite"];m.operatingMode||="full";m.activeUsers||=0;m.paidUsers||=0;m.userDelta||=0;m.revenue||=0;m.inferenceCost||=0;m.upkeep||=0;m.net||=0;m.financeHistory||=[];m.popularityFactor||=1;});
@@ -426,10 +470,14 @@ function openModelBuilder() {
   const latest=[...p.models].filter(m=>m.released).sort((a,b)=>b.releaseMonth-a.releaseMonth)[0];
   $("#modelName").value = state.firstDraft || latest?.family || "";
   $("#modelType").value="new";
+  $("#modelAccess").value="hybrid";
+  $("#freeLimit").value=12;
+  $("#proLimit").value=200;
   $("#modelTier").innerHTML=p.subscriptions.map(s=>`<option value="${s.id}">${escapeHtml(s.name)} · €${s.price}/mo</option>`).join("") || `<option value="">No paid tier created</option>`;
   [$("#modelType"),$("#modelAccess"),$("#modelTier")].forEach(enhanceSelect);
   const ownBest=p.models.filter(m=>m.released).sort((a,b)=>b.score-a.score)[0]?.score||0;
   const base=clamp(Math.round(Math.max(36,ownBest-2)),20,75); builderValues=Array(CATEGORIES.length).fill(base);
+  restoreModelDraft(p);
   renderSliders();
   const reasons=[];
   if(state.month===0)reasons.push("Q1 2024 is pre-launch. Advance to Q2 before beginning development.");
@@ -438,6 +486,8 @@ function openModelBuilder() {
   const locked=reasons.length>0;
   $("#modelLockNotice").classList.toggle("is-hidden",!locked); $("#modelLockNotice").textContent=reasons.join(" ");
   $("#releaseModelBtn").disabled=locked;
+  builderLastSaved=serializeDraft(p.modelDraft||currentModelDraft());
+  builderDirty=false;
   updateEstimate();
 }
 
@@ -453,7 +503,7 @@ function applyVersionPreset(){
   renderSliders();updateEstimate();
 }
 
-function closeModal() { $("#modelModal").classList.add("is-hidden"); $("#modalBackdrop").classList.add("is-hidden"); }
+function closeModal() { $("#modelModal").classList.add("is-hidden"); $("#modalBackdrop").classList.add("is-hidden"); builderDirty=false; }
 
 function renderSliders(){
   const family=cleanFamily($("#modelName")?.value),mode=$("#modelType")?.value||"new",classification=autoModelClass(player(),family,mode,builderValues),type=classification.type;builderValues=capValues(builderValues,player(),type);
@@ -477,6 +527,7 @@ function updateEstimate(){
   $("#riskText").textContent=messages.join(" ");
   const prelocked=state.month===0||!!p.project||state.month-p.lastLaunch<1;
   $("#releaseModelBtn").disabled=prelocked||!family||!finalName||duplicate||e.cost>availableCash(p)||(access!=="free"&&!p.subscriptions.length);
+  markBuilderDirty();
 }
 
 function startPlayerProject(ev){
@@ -490,6 +541,7 @@ function startPlayerProject(ev){
   p.project={name,family,versionNumber,mode,modifiers,type,access,freeLimit,proLimit,tierId:$("#modelTier").value,values:[...builderValues],audienceFocus,due:state.month+e.time,estimate:e.expected,publicForecast:clamp(e.expected+forecastNoise,1,99),launchHype:e.hype+focusHype,risk:e.risk,cost:e.cost};
   if(modifiers.includes("pro"))p.proUntil=state.month+3;
   state.firstDraft="";
+  p.modelDraft=null;
   notify("player",`${name} enters development`,`€${e.cost.toFixed(2)}M committed. Expected launch: ${dateLabel(p.project.due)}.`);
   closeModal(); toast(`${name} entered development.`); render();
 }
@@ -703,7 +755,7 @@ function bind(){
   $("#modelCompanyFilter").addEventListener("change",e=>{modelCompanyFilter=e.target.value;renderModelRanking();});
   $$(".nav-btn[data-view]").forEach(b=>b.addEventListener("click",()=>switchView(b.dataset.view)));
   $("#advanceBtn").addEventListener("click",()=>advanceMonth(false)); $("#newModelBtn").addEventListener("click",openModelBuilder);
-  $("#modelForm").addEventListener("submit",startPlayerProject); $("#modalBackdrop").addEventListener("click",closeModal); $$(".close-modal").forEach(b=>b.addEventListener("click",closeModal));
+  $("#modelForm").addEventListener("submit",startPlayerProject); $("#saveModelDraftBtn").addEventListener("click",()=>saveModelDraft(true)); $("#modalBackdrop").addEventListener("click",confirmCloseModelBuilder); $$(".close-modal").forEach(b=>b.addEventListener("click",confirmCloseModelBuilder));
   $("#categoryGrid").addEventListener("input",e=>{if(e.target.type==="range"){const i=+e.target.dataset.index;builderValues[i]=+e.target.value;e.target.nextElementSibling.value=e.target.value;updateEstimate();}});
   ["modelAccess","modelTier","freeLimit","proLimit"].forEach(id=>$(`#${id}`).addEventListener("input",updateEstimate));
   $("#modelType").addEventListener("change",applyVersionPreset);$("#modelName").addEventListener("change",applyVersionPreset);
@@ -713,7 +765,7 @@ function bind(){
   document.addEventListener("click",e=>{if(!e.target.closest(".custom-select"))document.querySelectorAll(".custom-select.open").forEach(x=>{x.classList.remove("open");x.querySelector(".custom-select-trigger").setAttribute("aria-expanded","false")});});
   $("#markReadBtn").addEventListener("click",()=>{state.notifications.forEach(n=>n.unread=false);state.unread=0;render();});
   $("#newGameMenuBtn").addEventListener("click",showNewGame); $("#savesBtn").addEventListener("click",showSaves); $("#audienceBtn").addEventListener("click",showAudienceMarket); $("#researchBtn").addEventListener("click",showResearch); $("#subscriptionsBtn").addEventListener("click",showSubscriptions);$("#investmentsBtn").addEventListener("click",showInvestments); $("#rulesBtn").addEventListener("click",showRules);$("#mobileMenuBtn").addEventListener("click",showMobileMenu);
-  document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeModal();$("#sidePanel").classList.add("is-hidden");}});
+  document.addEventListener("keydown",e=>{if(e.key==="Escape"){if(!$("#modelModal").classList.contains("is-hidden"))confirmCloseModelBuilder();$("#sidePanel").classList.add("is-hidden");}});
 }
 
 function initializeApp(){bind();localStorage.removeItem("benchmark-hard-mode-entitlement-v1");state=load();if(state){migrateState();render();}else $("#setupScreen").classList.remove("is-hidden");}

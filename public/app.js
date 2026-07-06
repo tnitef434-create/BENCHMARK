@@ -1,4 +1,4 @@
-import {AD_CAMPAIGNS,CLASS_RULES,INVESTORS,OPERATING_MODES,average,categoryImportance,classCap,clamp,developmentTime,emptyLedger,forecastLabel,inferenceCost,investmentDecision,spendableBudget,subscriptionConversion,upkeepCost,weakReleaseFactor} from "./game-core.js";
+import {AD_CAMPAIGNS,CLASS_RULES,FINAL_ROUND,INVESTORS,OPERATING_MODES,average,canFinishRace,categoryImportance,classCap,clamp,developmentTime,emptyLedger,forecastLabel,inferenceCost,investmentDecision,spendableBudget,subscriptionConversion,upkeepCost,weakReleaseFactor} from "./game-core.js";
 
 const LEGACY_CATEGORIES = ["Reasoning","Mathematics","Coding","Physics","Chemistry","Biology","Medicine","Law","Finance","History","Geography","Literature","Creative writing","Translation","Long-context recall","Instruction following","Factual accuracy","Common sense","Planning","Tool use","Agentic work","Data analysis","Cybersecurity","Visual understanding","Image creation","Audio understanding","Speech generation","Video understanding","Multilingual ability","Low-resource languages","Safety","Bias resistance","Speed","Efficiency","Reliability"];
 const PREVIOUS_CATEGORIES = ["Reasoning","Mathematics","Coding","Science","Factual accuracy","Instruction following","Common sense","Long-context recall","Planning","Tool use","Agentic work","Data analysis","Visual understanding","Image generation","Audio understanding","Speech generation","Video understanding","Multimodal integration","Multilingual ability","Safety","Speed","Efficiency","Reliability"];
@@ -55,12 +55,13 @@ const RIVALS = [
 ];
 
 const QUARTERS = ["Q1", "Q2", "Q3", "Q4"];
-const TOTAL_ROUNDS = 16;
+const TOTAL_ROUNDS = FINAL_ROUND + 1;
 const STORAGE_KEY = "benchmark-ai-race-v2";
 const SAVE_SLOTS_KEY = "benchmark-ai-race-save-slots-v1";
 let state = null;
 let builderValues = Array(CATEGORIES.length).fill(30);
 let builderAudienceApplied = false;
+let modelCompanyFilter = "all";
 const CATEGORY_IMPORTANCE=categoryImportance(CATEGORIES,AUDIENCES);
 
 const $ = (s) => document.querySelector(s);
@@ -125,6 +126,7 @@ function migrateState(){
   state.firstDraft=cleanFamily(state.firstDraft);
   state.selectedAudience||="casual";state.marketHistory||=[createMarketSnapshot(state.month||0)];
   state.previousModelRanks ||= {};
+  state.gameOver=Boolean(state.gameOver&&canFinishRace(state.month||0));
   state.companies.forEach((c,i)=>{
     if(c.id!=="player"&&!c.logo)c.logo=`assets/logos/${c.id}.png`;
     if(c.id!=="player"&&!c.strategy)c.strategy={quality:.82+Math.random()*.43,speed:.72+Math.random()*.55,pro:.12+Math.random()*.6,free:.12+Math.random()*.7,update:.42+Math.random()*.45,focus:(i*3+Math.floor(Math.random()*12))%CATEGORIES.length};
@@ -271,17 +273,19 @@ function render() {
 }
 
 function renderModelRanking() {
-  const list = $("#modelRanking");
-  const models = releasedModels().sort((a,b)=>b.score-a.score);
+  const list = $("#modelRanking"),filter=$("#modelCompanyFilter"),allModels=releasedModels().sort((a,b)=>b.score-a.score);
+  filter.innerHTML=`<option value="all">All companies</option><option value="player">Your models</option>${state.companies.filter(c=>c.id!=="player").sort((a,b)=>a.name.localeCompare(b.name)).map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join("")}`;
+  filter.value=modelCompanyFilter;enhanceSelect(filter);
+  const models=allModels.map((m,index)=>({m,globalRank:index+1})).filter(({m})=>modelCompanyFilter==="all"||m.companyId===modelCompanyFilter);
   if (!models.length) {
-    list.innerHTML = `<div class="empty-ranking"><strong>No models released.</strong><p>Q1 2024 is the quiet before the race. The first launches can land from Q2 onward.</p></div>`;
+    list.innerHTML = `<div class="empty-ranking"><strong>${allModels.length?"No matching models.":"No models released."}</strong><p>${allModels.length?"This company has not released a model yet.":"Q1 2024 is the quiet before the race. The first launches can land from Q2 onward."}</p></div>`;
     return;
   }
-  list.innerHTML = models.map((m,i)=>{
+  list.innerHTML = models.map(({m,globalRank})=>{
     const c=company(m.companyId);
-    const movement=rankMovement(m,i+1);
+    const movement=rankMovement(m,globalRank);
     return `<button class="rank-row model-grid ${c.id==="player"?"player-row":""}" data-company="${c.id}">
-      <span class="rank-primary"><span class="rank-position"><b class="rank-number ${i<3?"top":""}">${String(i+1).padStart(2,"0")}</b><i class="rank-move ${movement.cls}" title="${movement.label}" aria-label="${movement.label}">${movement.symbol}</i></span>${companyMark(c)}<span class="rank-name"><strong>${escapeHtml(m.name)}</strong><small>Released ${dateLabel(m.releaseMonth)}</small></span></span>
+      <span class="rank-primary"><span class="rank-position"><b class="rank-number ${globalRank<=3?"top":""}">${String(globalRank).padStart(2,"0")}</b><i class="rank-move ${movement.cls}" title="${movement.label}" aria-label="${movement.label}">${movement.symbol}</i></span>${companyMark(c)}<span class="rank-name"><strong>${escapeHtml(m.name)}</strong><small>Released ${dateLabel(m.releaseMonth)}</small></span></span>
       <span class="company-cell"><strong>${escapeHtml(c.name)}</strong><small>${money(c.budget)} left</small></span><span class="tag">${modelClassLabel(m)}</span><strong class="score">${m.score.toFixed(1)}</strong><span class="metric-cell"><strong>${compactNumber(m.activeUsers)}</strong><small>${signedNumber(m.userDelta)} / Q</small></span><span class="hype-delta">+${m.launchHype}</span>
     </button>`;
   }).join("");
@@ -305,7 +309,7 @@ function renderNotifications() {
 
 function renderCompanies() {
   const rows=[...state.companies].sort((a,b)=>b.points-a.points || b.hype-a.hype);
-  $("#companyGrid").innerHTML=rows.map(c=>`<button class="company-card" data-company="${c.id}"><div class="company-card-top">${companyMark(c)}<span class="tag">${c.insolvent?"Insolvent":c.id==="player"?"You":"Rival"}</span></div><h3>${escapeHtml(c.name)}</h3><p>${c.project?`${escapeHtml(c.project.name)} · forecast ${forecastLabel(c.project.publicForecast||c.project.estimate)}`:"No active project"}</p><div class="company-card-stats"><span><strong>${money(c.budget)}</strong>Budget</span><span><strong>${c.models.filter(m=>m.released).length}</strong>Models</span><span><strong>${c.project?1:0}</strong>Upcoming</span><span><strong>${compactNumber(c.users)}</strong>Users</span><span><strong>${compactNumber(c.subscribers)}</strong>Subs</span><span><strong>${Math.round(c.hype)}</strong>Hype</span></div></button>`).join("");
+  $("#companyGrid").innerHTML=rows.map(c=>{const role=c.insolvent?"insolvent":c.id==="player"?"player":"rival",label=c.insolvent?"Insolvent":c.id==="player"?"You":"Rival";return `<button class="company-card" data-company="${c.id}"><div class="company-card-top">${companyMark(c)}<span class="company-role ${role}"><i></i>${label}</span></div><h3>${escapeHtml(c.name)}</h3><p>${c.project?`${escapeHtml(c.project.name)} · forecast ${forecastLabel(c.project.publicForecast||c.project.estimate)}`:"No active project"}</p><div class="company-card-stats"><span><strong>${money(c.budget)}</strong>Budget</span><span><strong>${c.models.filter(m=>m.released).length}</strong>Models</span><span><strong>${c.project?1:0}</strong>Upcoming</span><span><strong>${compactNumber(c.users)}</strong>Users</span><span><strong>${compactNumber(c.subscribers)}</strong>Subs</span><span><strong>${Math.round(c.hype)}</strong>Hype</span></div></button>`}).join("");
 }
 
 function renderFinance(){
@@ -322,6 +326,7 @@ function showCompany(id) {
   const c=company(id); if(!c)return;
   const models=[...c.models].filter(m=>m.released).sort((a,b)=>b.releaseMonth-a.releaseMonth);
   $("#sidePanel").innerHTML=`<div class="panel-top"><div><p class="eyebrow">COMPANY FILE</p><h2>${escapeHtml(c.name)}</h2><p class="panel-meta">${c.id==="player"?"Your company":"Autonomous rival lab"}</p></div><button class="icon-btn close-panel"><svg><use href="#i-close"/></svg></button></div>${c.id==="player"?`<label class="logo-upload-label panel-logo-label">Company logo<span class="logo-upload"><span class="logo-preview">${c.logo?`<img src="${escapeHtml(c.logo)}" alt="Logo preview">`:`<svg><use href="#i-plus"/></svg>`}</span><span class="logo-upload-copy"><strong>${c.logo?"Replace your logo":"Add your logo"}</strong><small>PNG, JPG, WEBP or SVG · max 1.5 MB</small></span><span class="logo-upload-action">Choose file</span><input id="changeCompanyLogo" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml"></span></label>`:""}<div class="panel-stat-grid"><div><span>Budget left</span><strong>${money(c.budget)}</strong></div><div><span>Hype / points</span><strong>${Math.round(c.hype)} / ${c.points}</strong></div></div><div class="audience-summary"><div><span>Active users</span><strong>${compactNumber(c.users)}</strong><small>${signedNumber(c.userDelta)} this quarter</small></div><div><span>Subscribers</span><strong>${compactNumber(c.subscribers)}</strong><small>${signedNumber(c.subDelta)} this quarter</small></div></div>${c.project?`<div class="upcoming-forecast"><span>UPCOMING · ${dateLabel(c.project.due)}</span><strong>${escapeHtml(c.project.name)}</strong><b>${forecastLabel(c.project.publicForecast||c.project.estimate)}</b><small>Forecasts are intentionally uncertain.</small></div>`:""}<div class="panel-section"><h3>Model history</h3>${models.length?models.map(m=>`<div class="panel-model model-detail"><div><strong>${escapeHtml(m.name)}</strong><small>${modelClassLabel(m)} · ${dateLabel(m.releaseMonth)} · ${compactNumber(m.activeUsers)} users</small>${c.id==="player"?`<div class="operating-picker">${Object.entries(OPERATING_MODES).map(([key,op])=>`<button data-model-mode="${m.id}" data-mode="${key}" class="${m.operatingMode===key?"active":""}" ${key==="lean"&&state.month-m.releaseMonth<2||key==="legacy"&&state.month-m.releaseMonth<4?"disabled":""}>${op.label}</button>`).join("")}</div>`:""}</div><div class="model-detail-numbers"><strong>${m.score.toFixed(1)}</strong><small>${m.net<0?"−":"+"}${money(Math.abs(m.net))}/Q</small></div></div>`).join(""):`<p class="panel-meta">No released models. Every lab began at zero.</p>`}</div><div class="panel-section"><h3>Research</h3>${Object.entries(RESEARCH_TRACKS).map(([key,track])=>`<div class="panel-model"><div><strong>${track.name}</strong><small>${c.researchProject?.track===key?`In progress · due ${dateLabel(c.researchProject.due)}`:track.description}</small></div><strong>${RESEARCH_CAPS[c.research?.[key]||0]}</strong></div>`).join("")}</div>`;
+  $("#sidePanel .upcoming-forecast small")?.replaceChildren("Forecasts are uncertain.");
   $("#sidePanel").classList.remove("is-hidden");
   $("#changeCompanyLogo")?.addEventListener("change",async e=>{const file=e.target.files[0];if(!file)return;if(file.size>1.5*1024*1024){toast("Logo must be smaller than 1.5 MB.");return;}c.logo=await fileToDataUrl(file);save();render();showCompany("player");toast("Company logo updated.");});
   $$('[data-model-mode]').forEach(btn=>btn.addEventListener("click",()=>{const m=c.models.find(x=>x.id===btn.dataset.modelMode);if(!m||btn.disabled)return;m.operatingMode=btn.dataset.mode;save();render();showCompany(c.id);toast(`${m.name} moved to ${OPERATING_MODES[m.operatingMode].label} operations.`);}));
@@ -538,7 +543,7 @@ function awardYear(){
 
 function advanceMonth(auto=false){
   if(state.gameOver)return;
-  if(state.month===TOTAL_ROUNDS-1){awardYear();state.gameOver=true;notify("system","The 2027 race is complete",`${[...state.companies].sort((a,b)=>b.points-a.points)[0].name} wins the era on points.`);render();showEnd();return;}
+  if(canFinishRace(state.month)){awardYear();state.gameOver=true;notify("system","The 2027 race is complete",`${[...state.companies].sort((a,b)=>b.points-a.points)[0].name} wins the era on points.`);render();showEnd();return;}
   if(state.month%4===3)awardYear();
   snapshotModelRanks();
   rollLedgers();
@@ -639,6 +644,7 @@ function bind(){
     const data=await fileToDataUrl(file);$("#logoPreview").innerHTML=`<img src="${data}" alt="Logo preview">`;
   });
   $("#setupForm").addEventListener("submit",async e=>{e.preventDefault();const difficulty=new FormData(e.target).get("difficulty"),file=$("#companyLogo").files[0];if(file?.size>1.5*1024*1024){toast("Logo must be smaller than 1.5 MB.");return;}const logo=file?await fileToDataUrl(file):null;state=newGame($("#companyName").value,$("#firstModelName").value,difficulty,logo);render();});
+  $("#modelCompanyFilter").addEventListener("change",e=>{modelCompanyFilter=e.target.value;renderModelRanking();});
   $$(".nav-btn[data-view]").forEach(b=>b.addEventListener("click",()=>switchView(b.dataset.view)));
   $("#advanceBtn").addEventListener("click",()=>advanceMonth(false)); $("#newModelBtn").addEventListener("click",openModelBuilder);
   $("#modelForm").addEventListener("submit",startPlayerProject); $("#modalBackdrop").addEventListener("click",closeModal); $$(".close-modal").forEach(b=>b.addEventListener("click",closeModal));

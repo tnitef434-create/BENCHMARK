@@ -113,17 +113,18 @@ function createMarketSnapshot(round,random=Math.random){
   return {round,total:Math.round(10000000*Math.pow(1.075,round)*(.96+random()*.08)),shares};
 }
 
-function newGame(name, firstModel, difficulty, playerLogo, startingSubscription=null) {
+function randomRivalRoster(count){const roster=[...RIVALS];for(let i=roster.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[roster[i],roster[j]]=[roster[j],roster[i]];}return roster.slice(0,clamp(Number(count)||15,1,RIVALS.length));}
+function newGame(name, firstModel, difficulty, playerLogo, startingSubscription=null, rivalCount=15) {
   const rivalBudget = difficulty === "hard" ? 20 : 10;
-  const companies = RIVALS.map(r => makeCompany(r[0], r[1], r[2], rivalBudget, r[4]));
+  const roster=randomRivalRoster(rivalCount),companies = roster.map(r => makeCompany(r[0], r[1], r[2], rivalBudget, r[4]));
   const audienceKeys=Object.keys(AUDIENCES);
   companies.forEach((c,i)=>c.strategy={quality:.82+Math.random()*.43,speed:.72+Math.random()*.55,pro:.12+Math.random()*.6,free:.12+Math.random()*.7,update:.42+Math.random()*.45,focus:(i*3+Math.floor(Math.random()*12))%CATEGORIES.length,audience:audienceKeys[Math.floor(Math.random()*audienceKeys.length)]});
   const p = makeCompany("player", name.trim(), name.trim().slice(0,2).toUpperCase(), 10, [], playerLogo);
   p.subscriptions = startingSubscription?[{id:"pro", name:startingSubscription.name, price:startingSubscription.price, members:0, memberDelta:0}]:[];
   companies.push(p);
   return {
-    version: CURRENT_SAVE_VERSION, month: 0, difficulty, companies, firstDraft: cleanFamily(firstModel), selectedAudience:"casual", marketHistory:[createMarketSnapshot(0)],
-    notifications: [{id:Date.now(), month:0, companyId:"system", unread:true, title:"The race begins", text:"All 16 labs enter Q1 2020 with zero released models."}],
+    version: CURRENT_SAVE_VERSION, month: 0, difficulty, rivalCount:roster.length, companies, firstDraft: cleanFamily(firstModel), selectedAudience:"casual", marketHistory:[createMarketSnapshot(0)],
+    notifications: [{id:Date.now(), month:0, companyId:"system", unread:true, title:"The race begins", text:`${companies.length} labs enter Q1 2020 with zero released models.`}],
     gameOver:false, unread:1, yearlyAwards:[], previousModelRanks:{}, newsArticles:[],newsTop:[],newsBoosts:{},newsTemplateHistory:[],personalInbox:[],quarterPlans:{}, seed: Math.floor(Math.random()*999999), loadedFromLegacySave:false, originalVersion:CURRENT_SAVE_VERSION
   };
 }
@@ -204,6 +205,7 @@ function migrateState(){
   }
   state.firstDraft=cleanFamily(state.firstDraft);
   state.selectedAudience||="casual";state.marketHistory||=[createMarketSnapshot(state.month||0)];
+  state.rivalCount=state.companies.filter(c=>c.id!=="player").length;
   state.previousModelRanks ||= {};
   state.newsArticles||=[];state.newsTop||=[];state.newsBoosts||={};state.newsTemplateHistory||=[];
   state.personalInbox||=[];state.quarterPlans||={};
@@ -434,6 +436,7 @@ function render() {
   $("#monthLabel").textContent = QUARTERS[state.month % 4];
   $("#yearLabel").textContent = BASE_YEAR + Math.floor(state.month / 4);
   $("#difficultyLabel").textContent = state.difficulty.toUpperCase();
+  $("#activeLabCount").textContent=`${state.companies.length} LAB${state.companies.length===1?"":"S"}`;
   $("#budgetStat").textContent = money(player().budget);
   $("#runwayStat").textContent = state.gameOver ? "Race finished" : `${TOTAL_ROUNDS-state.month} quarters left`;
   const own = player().models.filter(m=>m.released).sort((a,b)=>b.score-a.score);
@@ -855,7 +858,7 @@ function showInvestments(){
 
 function showRules(){
   $("#sidePanel").innerHTML=`<div class="panel-top"><div><p class="eyebrow">GAME SYSTEM</p><h2>Rules & scoring</h2></div><button class="icon-btn close-panel"><svg><use href="#i-close"/></svg></button></div><ul class="rules-list"><li>The race has 16 turns: Q1–Q4 of 2024 through 2027. Q1 2024 is pre-launch.</li><li>Public category importance, audience demand, freshness, class and relative quality determine model users and hype.</li><li>Every released model keeps a small residual audience. Users and subscribers can grow or fall each quarter.</li><li>Casual audiences convert to subscriptions more slowly than coder, business or research-heavy audiences, so broad appeal stays strong without becoming overpowered.</li><li>Free and paid daily messages consume inference budget. Heavy models, high limits and large audiences cost substantially more.</li><li>Large audiences, subscriber support, revenue and cash reserves create progressive growth-operation costs, preventing runaway treasuries.</li><li>A model debuting at #1 earns +24 placement hype; top-three debuts earn +15 and top-five debuts +8. Weak-release penalties still apply.</li><li>LITE and FLASH release in one quarter with strict capability caps. PRO is powerful but expensive and has a three-quarter cooldown.</li><li>Old models can move to Lean or Legacy operations to trade reach and limits for lower upkeep.</li><li>Starting with a company’s third consecutive quarter represented in the model top three, it earns +1 streak point each continuing quarter.</li><li>At each Q4 close, company-best models earn 10 / 8 / 6 / 4 / 2 points, portfolio depth adds points, hype earns 5 / 3 / 2 / 1, top total users earn 5 / 3 / 2 / 1, and top subscribers earn 5 / 3 / 2 / 1.</li><li>Each company has three lifetime investment requests. Rejections count, actual chances are hidden and accepted offers may be partial.</li><li>Insolvency occurs only when quarterly spending closes above all income and available cash. The race then continues in observer mode.</li><li>All economy, investment, model and scoring rules apply equally to rivals.</li></ul><button id="resetGame" class="utility-btn danger">Reset this game <span>×</span></button>`;
-  const rules=$("#sidePanel .rules-list"),firstRule=rules.querySelector("li");firstRule.textContent="The race runs for 29 turns from Q1 2020 through Q1 2027. Q1 2020 is pre-launch.";firstRule.insertAdjacentHTML("afterend","<li>The personal inbox contains a required leadership decision each quarter. The race cannot advance until it is resolved.</li><li>Brand-new model families earn launch hype but begin with fresh reputation. Strong families compound adoption; weak releases damage their brand.</li><li>Race points are cumulative history. A company can retain earlier points after its models leave today’s top five; every company dossier shows a full point breakdown.</li><li>Holding the #1 model earns +2 points each quarter from the second consecutive quarter. Other top-three streaks earn +1 per quarter starting with the third.</li><li>Companies can lose points through sustained bottom-tier hype, five-quarter launch stagnation, severe release failures, and insolvency. Point losses are capped at −5 overall.</li>");
+  const rules=$("#sidePanel .rules-list"),firstRule=rules.querySelector("li");firstRule.textContent="The race runs for 29 turns from Q1 2020 through Q1 2027. Q1 2020 is pre-launch.";firstRule.insertAdjacentHTML("afterend",`<li>This run has ${state.companies.length} active labs. New games can use one, three, five, or all fifteen rivals.</li><li>The personal inbox contains a required leadership decision each quarter. The race cannot advance until it is resolved.</li><li>Brand-new model families earn launch hype but begin with fresh reputation. Strong families compound adoption; weak releases damage their brand.</li><li>Race points are cumulative history. A company can retain earlier points after its models leave today’s top five; every company dossier shows a full point breakdown.</li><li>Holding the #1 model earns +2 points each quarter from the second consecutive quarter. Other top-three streaks earn +1 per quarter starting with the third.</li><li>Companies can lose points through sustained bottom-tier hype, five-quarter launch stagnation, severe release failures, and insolvency. Point losses are capped at −5 overall.</li>`);
   const oldStreak=[...rules.children].find(li=>li.textContent.startsWith("Starting with a company’s third consecutive"));if(oldStreak)oldStreak.remove();
   const seasonalRule=[...rules.children].find(li=>li.textContent.startsWith("At each Q4 close"));if(seasonalRule)seasonalRule.textContent="At every Q4 and the final Q1 2027 close, company-best models earn 10 / 8 / 6 / 4 / 2 points, portfolio depth adds points, and hype, users, and subscribers each award 5 / 3 / 2 / 1.";
   $("#sidePanel").classList.remove("is-hidden");
@@ -903,7 +906,7 @@ function bind(){
   });
   $$('input[name="startingSubscription"]').forEach(input=>input.addEventListener("change",toggleStartingSubscriptionFields));
   toggleStartingSubscriptionFields();
-  $("#setupForm").addEventListener("submit",async e=>{e.preventDefault();const form=new FormData(e.target),difficulty=form.get("difficulty"),createSubscription=form.get("startingSubscription")!=="no",file=$("#companyLogo").files[0];if(file?.size>1.5*1024*1024){toast("Logo must be smaller than 1.5 MB.");return;}const logo=file?await fileToDataUrl(file):null;const startingSubscription=createSubscription?{name:($("#startingSubscriptionName").value.trim()||"Pro").slice(0,18),price:Math.max(3,Math.min(200,+$("#startingSubscriptionPrice").value||19))}:null;state=newGame($("#companyName").value,$("#firstModelName").value,difficulty,logo,startingSubscription);render();});
+  $("#setupForm").addEventListener("submit",async e=>{e.preventDefault();const form=new FormData(e.target),difficulty=form.get("difficulty"),rivalCount=+form.get("rivalCount")||15,createSubscription=form.get("startingSubscription")!=="no",file=$("#companyLogo").files[0];if(file?.size>1.5*1024*1024){toast("Logo must be smaller than 1.5 MB.");return;}const logo=file?await fileToDataUrl(file):null;const startingSubscription=createSubscription?{name:($("#startingSubscriptionName").value.trim()||"Pro").slice(0,18),price:Math.max(3,Math.min(200,+$("#startingSubscriptionPrice").value||19))}:null;state=newGame($("#companyName").value,$("#firstModelName").value,difficulty,logo,startingSubscription,rivalCount);render();});
   $("#modelCompanyFilter").addEventListener("change",e=>{modelCompanyFilter=e.target.value;renderModelRanking();});
   $$(".nav-btn[data-view]").forEach(b=>b.addEventListener("click",()=>switchView(b.dataset.view)));
   $("#advanceBtn").addEventListener("click",()=>advanceMonth(false)); $("#newModelBtn").addEventListener("click",openModelBuilder);

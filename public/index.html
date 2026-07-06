@@ -97,7 +97,7 @@
       </section>
 
       <section id="companiesView" class="view">
-        <div class="section-heading"><div><p class="eyebrow">16 LABS</p><h2>Company directory</h2></div><p class="section-note">Open a company to inspect its models and remaining budget.</p></div>
+        <div class="section-heading"><div><p id="activeLabCount" class="eyebrow">16 LABS</p><h2>Company directory</h2></div><p class="section-note">Open a company to inspect its models and remaining budget.</p></div>
         <div class="points-guide"><div><span>Season model race</span><strong>10 / 8 / 6 / 4 / 2</strong><small>Best model from each company, awarded every Q4 and at the final Q1 2027 close.</small></div><div><span>Continuous leadership</span><strong>+2 per quarter</strong><small>From the second consecutive quarter holding model #1. Other top-three streaks earn +1 from quarter three.</small></div><div><span>Market awards</span><strong>Users · subs · hype</strong><small>Season closes award 5 / 3 / 2 / 1 in all three categories, plus top-15 portfolio depth.</small></div><div><span>Cumulative score</span><strong>History matters</strong><small>Points persist after models fall. Low hype, stagnation, failed releases and insolvency can remove points.</small></div></div>
         <div class="ranking-head company-leaderboard-grid"><span>Rank / company</span><span>Budget</span><span>Users</span><span>Subscribers</span><span>Hype</span><span>Points</span></div>
         <div id="companyLeaderboard" class="ranking-list company-leaderboard"></div>
@@ -156,6 +156,12 @@
       <fieldset><legend>Difficulty</legend>
         <label class="mode-option"><input type="radio" name="difficulty" value="standard" checked><span><strong>Standard</strong><small>Rivals start with €10M</small></span></label>
         <label class="mode-option"><input type="radio" name="difficulty" value="hard"><span><strong>Hard</strong><small>Rivals start with €20M and move faster</small></span></label>
+      </fieldset>
+      <fieldset><legend>Race size</legend>
+        <label class="mode-option"><input type="radio" name="rivalCount" value="1"><span><strong>1v1</strong><small>One rival company</small></span></label>
+        <label class="mode-option"><input type="radio" name="rivalCount" value="3"><span><strong>Four labs</strong><small>Three rival companies</small></span></label>
+        <label class="mode-option"><input type="radio" name="rivalCount" value="5"><span><strong>Six labs</strong><small>Five rival companies</small></span></label>
+        <label class="mode-option"><input type="radio" name="rivalCount" value="15" checked><span><strong>Full race</strong><small>All fifteen rivals</small></span></label>
       </fieldset>
       <button class="start-btn" type="submit">Create company <svg><use href="#i-arrow"/></svg></button>
       <small class="setup-foot">Your first model family is saved as a draft. Nobody can release until Q2 2024.</small>

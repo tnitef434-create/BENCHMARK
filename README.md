@@ -1,6 +1,6 @@
 # BENCHMARK
 
-A quarterly AI-company strategy game spanning Q1 2024 through Q4 2027.
+A quarterly AI-company strategy game spanning Q1 2020 through Q1 2027.
 
 ```powershell
 npm.cmd install

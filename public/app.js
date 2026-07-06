@@ -55,6 +55,7 @@ const RIVALS = [
 ];
 
 const QUARTERS = ["Q1", "Q2", "Q3", "Q4"];
+const CURRENT_SAVE_VERSION = 5;
 const TOTAL_ROUNDS = FINAL_ROUND + 1;
 const STORAGE_KEY = "benchmark-ai-race-v2";
 const SAVE_SLOTS_KEY = "benchmark-ai-race-save-slots-v1";
@@ -93,9 +94,9 @@ function newGame(name, firstModel, difficulty, playerLogo) {
   p.subscriptions = [{id:"pro", name:"Pro", price:19, members:0}];
   companies.push(p);
   return {
-    version: 5, month: 0, difficulty, companies, firstDraft: cleanFamily(firstModel), selectedAudience:"casual", marketHistory:[createMarketSnapshot(0)],
+    version: CURRENT_SAVE_VERSION, month: 0, difficulty, companies, firstDraft: cleanFamily(firstModel), selectedAudience:"casual", marketHistory:[createMarketSnapshot(0)],
     notifications: [{id:Date.now(), month:0, companyId:"system", unread:true, title:"The race begins", text:"All 16 labs enter Q1 2024 with zero released models."}],
-    gameOver:false, unread:1, yearlyAwards:[], previousModelRanks:{}, seed: Math.floor(Math.random()*999999)
+    gameOver:false, unread:1, yearlyAwards:[], previousModelRanks:{}, seed: Math.floor(Math.random()*999999), loadedFromLegacySave:false, originalVersion:CURRENT_SAVE_VERSION
   };
 }
 
@@ -117,12 +118,15 @@ function migrateBenchmarkValues(values){
 }
 function migrateState(){
   if(!state)return;
+  const incomingVersion = state.version || 1;
+  state.originalVersion = incomingVersion;
+  state.loadedFromLegacySave = incomingVersion < CURRENT_SAVE_VERSION;
   if((state.version||1)<2){
     state.month=Math.floor((state.month||0)/3);state.version=2;
     state.companies.forEach(c=>{c.lastLaunch=Math.floor((c.lastLaunch||-99)/3);c.proUntil=Math.ceil((c.proUntil||0)/3);if(c.project)c.project.due=Math.max(state.month+1,Math.ceil(c.project.due/3));c.models.forEach(m=>m.releaseMonth=Math.floor((m.releaseMonth||0)/3));});
   }
   if((state.version||2)<4){state.companies.forEach(c=>{if(c.project?.values)c.project.values=migrateBenchmarkValues(c.project.values);c.models.forEach(m=>m.values=migrateBenchmarkValues(m.values));});state.version=4;}
-  if((state.version||4)<5)state.version=5;
+  if((state.version||4)<CURRENT_SAVE_VERSION)state.version=CURRENT_SAVE_VERSION;
   state.firstDraft=cleanFamily(state.firstDraft);
   state.selectedAudience||="casual";state.marketHistory||=[createMarketSnapshot(state.month||0)];
   state.previousModelRanks ||= {};
@@ -253,6 +257,7 @@ function render() {
   if (!state) return;
   $("#app").classList.remove("is-hidden");
   $("#setupScreen").classList.add("is-hidden");
+  $("#saveVersionWarning").classList.toggle("is-hidden", !state.loadedFromLegacySave);
   $("#monthLabel").textContent = QUARTERS[state.month % 4];
   $("#yearLabel").textContent = 2024 + Math.floor(state.month / 4);
   $("#difficultyLabel").textContent = state.difficulty.toUpperCase();

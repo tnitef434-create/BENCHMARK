@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#080808" />
-  <title>BENCHMARK — AI Race 2024–2027</title>
+  <title>BENCHMARK — AI Race 2020–2027</title>
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="release.css" />
@@ -23,6 +23,8 @@
     <symbol id="i-close" viewBox="0 0 24 24"><path d="M5 5l14 14M19 5 5 19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
     <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M7 3h10v5a5 5 0 0 1-10 0V3Zm0 2H3v2a4 4 0 0 0 5 4m9-6h4v2a4 4 0 0 1-5 4m-4 2v5m-4 3h8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
     <symbol id="i-finance" viewBox="0 0 24 24"><path d="M4 19V9m5 10V5m5 14v-7m5 7V3M3 21h18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+    <symbol id="i-news" viewBox="0 0 24 24"><path d="M4 5h16v14H4V5Zm3 3h5v4H7V8Zm8 0h2m-2 4h2M7 15h10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M4 5h16v14H4V5Zm0 9h5l2 2h2l2-2h5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   </svg>
 
   <div id="app" class="app-shell is-hidden">
@@ -32,6 +34,8 @@
         <button class="nav-btn active" data-view="race"><svg><use href="#i-grid"/></svg><span>Model race</span></button>
         <button class="nav-btn" data-view="hype"><svg><use href="#i-bolt"/></svg><span>Hype</span></button>
         <button class="nav-btn" data-view="notifications"><svg><use href="#i-bell"/></svg><span>Activity</span><em id="unreadCount">0</em></button>
+        <button class="nav-btn" data-view="news"><svg><use href="#i-news"/></svg><span>News</span></button>
+        <button class="nav-btn" data-view="inbox"><svg><use href="#i-inbox"/></svg><span>Inbox</span><em id="inboxUnreadCount">0</em></button>
         <button class="nav-btn" data-view="companies"><svg><use href="#i-building"/></svg><span>Companies</span></button>
         <button class="nav-btn" data-view="finance"><svg><use href="#i-finance"/></svg><span>Finance</span></button>
         <button id="mobileMenuBtn" class="nav-btn mobile-menu-btn"><svg><use href="#i-grid"/></svg><span>Menu</span></button>
@@ -99,6 +103,19 @@
         <div id="companyGrid" class="company-cards"></div>
       </section>
 
+      <section id="newsView" class="view">
+        <div class="section-heading"><div><p class="eyebrow">GLOBAL PRESS INDEX</p><h2>Most watched stories</h2></div><p class="section-note">Breakout launches can turn coverage into hype, users and subscribers.</p></div>
+        <div id="newsPodium" class="news-podium"></div>
+        <div class="news-archive-heading"><p class="eyebrow">RECENT COVERAGE</p><span>Model quality raises the chance of making the news.</span></div>
+        <div id="newsArchive" class="news-archive"></div>
+      </section>
+
+      <section id="inboxView" class="view">
+        <div class="section-heading"><div><p class="eyebrow">PERSONAL INBOX</p><h2>Leadership messages</h2></div><p class="section-note">Resolve the required quarterly decision before advancing the race.</p></div>
+        <div id="quarterGate" class="quarter-gate"></div>
+        <div id="personalInbox" class="personal-inbox"></div>
+      </section>
+
       <section id="financeView" class="view">
         <div class="section-heading"><div><p class="eyebrow">QUARTERLY LEDGER</p><h2>Income & spending</h2></div><p class="section-note">Every euro of model operation, growth and research is accounted for here.</p></div>
         <div id="financeSummary" class="finance-summary"></div>
@@ -112,9 +129,9 @@
   <div id="setupScreen" class="setup-screen is-hidden">
     <div class="setup-brand"><svg><use href="#i-mark"/></svg><span>BENCHMARK</span></div>
     <div class="setup-copy">
-      <p class="eyebrow">AI INDUSTRY SIMULATOR / 2024–2027</p>
+      <p class="eyebrow">AI INDUSTRY SIMULATOR / 2020–2027</p>
       <h1>Build the model<br>everyone chases.</h1>
-      <p>Sixteen quarters. Sixteen labs. One finite runway. Every company begins with zero models.</p>
+      <p>Twenty-nine quarters. Sixteen labs. One finite runway. Every company begins with zero models.</p>
     </div>
     <form id="setupForm" class="setup-form">
       <label>Company name<input id="companyName" maxlength="22" placeholder="e.g. Northstar AI" required /></label>
@@ -151,7 +168,7 @@
     <form id="modelForm">
       <div class="builder-grid">
         <div class="builder-main">
-          <div class="form-row"><label>Model family<input id="modelName" maxlength="24" required /></label><label>Version path<select id="modelType"><option value="new">New generation</option><option value="update">Updated version</option><option value="edition">Edition of current version</option></select></label></div>
+          <div class="form-row"><label>Model family<input id="modelName" maxlength="24" required /></label><label>Version path<select id="modelType"><option value="new">New generation</option><option value="update">Updated version</option><option value="edition">Edition of current version</option><option value="new-family">Brand-new model family</option></select></label></div>
           <div class="edition-section auto-class-section"><span>Model class <small>Assigned automatically from benchmark direction, speed focus and improvement level</small></span><div id="autoClassPreview" class="auto-class-preview">Automatic</div></div>
           <div class="form-row"><label>Access<select id="modelAccess"><option value="hybrid">Free + subscription</option><option value="free">Free for everyone</option><option value="paid">Subscription only</option></select></label><label>Subscription<select id="modelTier"></select></label></div>
           <div class="form-row"><label>Free messages / day<input id="freeLimit" type="number" min="0" max="200" value="12" /></label><label>Subscriber messages / day<input id="proLimit" type="number" min="10" max="2000" value="200" /></label></div>

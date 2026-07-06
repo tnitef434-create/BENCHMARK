@@ -6,7 +6,7 @@ export const CLASS_RULES = {
 };
 export const OPERATING_MODES={full:{label:"Full",upkeep:1,reach:1,limits:1},lean:{label:"Lean",upkeep:.6,reach:.93,limits:1},legacy:{label:"Legacy",upkeep:.25,reach:.8,limits:.5}};
 export const AD_CAMPAIGNS={small:{label:"Small",cost:.05,boost:8},medium:{label:"Medium",cost:.2,boost:20},large:{label:"Large",cost:.6,boost:38}};
-export const FINAL_ROUND=12;
+export const FINAL_ROUND=28;
 export function canFinishRace(round){return round>=FINAL_ROUND;}
 export const INVESTORS=[
   {id:"blackrock",name:"BlackRock",label:"Ultra-selective",base:.05,logo:"assets/investors/blackrock.svg"},
@@ -53,6 +53,31 @@ export function upkeepCost(score,type="flagship",mode="full",users=0){
   const scaleOverhead=Math.sqrt(Math.max(0,users)/100000)*.12;
   return (.025+score*score*.000012+frontier+scaleOverhead)*(CLASS_RULES[type]?.upkeep||1)*(OPERATING_MODES[mode]?.upkeep||1);
 }
+export function growthOperationsCost({users=0,subscribers=0,revenue=0,budget=0}){
+  const audience=Math.min(1.5,Math.max(0,users)/1000000*.15);
+  const support=Math.min(1.2,Math.max(0,subscribers)/100000*.08);
+  const reinvestment=Math.max(0,revenue)*.08;
+  const treasury=Math.max(0,budget-20)*.22;
+  return audience+support+reinvestment+treasury;
+}
+export function launchPlacementHype(rank){
+  return rank===1?24:rank<=3?15:rank<=5?8:0;
+}
+export function newsCoverageChance({score=0,debutRank=99,type="flagship"}){
+  const quality=Math.pow(clamp((score-30)/70,0,1),1.35),placement=debutRank===1?.28:debutRank<=3?.18:debutRank<=5?.1:0,classBoost=type==="pro"?.08:type==="light"?-.08:0;
+  return clamp(.08+quality*.68+placement+classBoost,.04,.96);
+}
+export function newsImpact({views=0,articleRank=3,score=0,existingConversion=.02}){
+  const rankMultiplier=articleRank===1?1.3:articleRank===2?1.12:1;
+  const users=Math.round(views*(.14+clamp(score,0,100)/100*.1)*rankMultiplier);
+  const conversion=clamp(existingConversion*1.35+score/4200,.015,.085);
+  return {hype:(articleRank===1?10:articleRank===2?7:5)+Math.round(score/35),users,subscribers:Math.round(users*conversion)};
+}
+export function annualPerformancePenalty({hype=0,bottomRank=99,quartersSinceLaunch=0,hasModels=false}){
+  const lowHype=bottomRank===1&&hype<8?2:bottomRank===2&&hype<12?1:0;
+  const stagnation=hasModels&&quartersSinceLaunch>=5?1:0;
+  return {lowHype,stagnation,total:lowHype+stagnation};
+}
 export function modelBuildCost({values=[],type="flagship",variance=0,overreach=0,access="hybrid"}){
   const avg=average(values),base=CLASS_RULES[type]?.build??.72;
   const frontier=values.reduce((sum,value)=>sum+5.5*Math.pow(Math.max(0,value-65)/35,3),0);
@@ -75,7 +100,7 @@ export function investmentDecision({investor,amount,metrics,random=Math.random})
   const factor=clamp(.35+potential/130+(random()-.5)*.2-.03*amount,.2,1);
   return{accepted:true,offer:Math.max(.1,Math.round(amount*factor*10)/10),potential};
 }
-export function emptyLedger(round){return{round,subscriptionRevenue:0,investmentIncome:0,inference:0,upkeep:0,development:0,research:0,advertising:0,runwaySavings:0,revenue:0,spending:0,net:0,closing:0};}
+export function emptyLedger(round){return{round,subscriptionRevenue:0,investmentIncome:0,inference:0,upkeep:0,operations:0,development:0,research:0,advertising:0,runwaySavings:0,revenue:0,spending:0,net:0,closing:0};}
 export function spendableBudget(budget,hard=false,reserve=.1){return Math.max(0,budget-(hard?0:reserve));}
 
 export function runDeterministicSimulation(seed=1,hard=false){
@@ -83,7 +108,7 @@ export function runDeterministicSimulation(seed=1,hard=false){
   const companies=Array.from({length:16},(_,id)=>({id,budget:id===15?10:hard?20:10,models:[],users:0,subscribers:0,requests:0,points:0,streak:0,insolvent:false}));
   for(let round=0;round<=FINAL_ROUND;round++)companies.forEach(c=>{
     if(!c.insolvent&&round>0&&(c.models.length===0||random()<.32)){const types=["flagship","pro","light","flash"],type=types[Math.floor(random()*types.length)],score=clamp(35+round*2.5+random()*18,1,99),cost=CLASS_RULES[type].build+score*score*.00034;c.budget-=cost;c.models.push({score,type,users:25,subs:0,freeLimit:type==="pro"?4:18,proLimit:200,mode:"full"});}
-    if(c.models.length){const best=Math.max(...c.models.map(m=>m.score)),target=Math.max(c.models.length*25,Math.round((120000+round*30000)*(best/70)*(0.7+random()*.6)));c.users=Math.max(c.models.length*25,Math.round(c.users*.45+target*.55));c.subscribers=Math.round(c.users*subscriptionConversion({offerScore:clamp(best*.75+c.models.length*6,0,100)}));let remaining=c.users;c.models.forEach((m,i)=>{m.users=i===c.models.length-1?Math.max(25,remaining):Math.max(25,Math.round(c.users/c.models.length));remaining-=m.users;m.subs=Math.round(c.subscribers*m.users/c.users);const compute=inferenceCost({users:m.users,subscribers:m.subs,freeLimit:m.freeLimit,proLimit:m.proLimit,score:m.score,type:m.type,mode:m.mode});c.budget+=m.subs*19*3/1e6-compute.total-upkeepCost(m.score,m.type,m.mode);});}
+    if(c.models.length){const best=Math.max(...c.models.map(m=>m.score)),target=Math.max(c.models.length*25,Math.round((120000+round*30000)*(best/70)*(0.7+random()*.6)));c.users=Math.max(c.models.length*25,Math.round(c.users*.45+target*.55));c.subscribers=Math.round(c.users*subscriptionConversion({offerScore:clamp(best*.75+c.models.length*6,0,100)}));let remaining=c.users,revenue=c.subscribers*19*3/1e6;c.models.forEach((m,i)=>{m.users=i===c.models.length-1?Math.max(25,remaining):Math.max(25,Math.round(c.users/c.models.length));remaining-=m.users;m.subs=Math.round(c.subscribers*m.users/c.users);const compute=inferenceCost({users:m.users,subscribers:m.subs,freeLimit:m.freeLimit,proLimit:m.proLimit,score:m.score,type:m.type,mode:m.mode});c.budget+=m.subs*19*3/1e6-compute.total-upkeepCost(m.score,m.type,m.mode,m.users);});c.budget-=growthOperationsCost({users:c.users,subscribers:c.subscribers,revenue,budget:c.budget});}
     if(c.budget<2&&c.requests<3){c.requests++;const result=investmentDecision({investor:INVESTORS[Math.floor(random()*INVESTORS.length)],amount:3,metrics:{bestScore:Math.max(0,...c.models.map(m=>m.score)),projectEstimate:0,hype:20,users:c.users,subscribers:c.subscribers},random});c.budget+=result.offer;}
     if(hard&&c.budget<0)c.insolvent=true;
     if(!hard&&c.budget<.1)c.budget=.1;

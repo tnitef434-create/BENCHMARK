@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
-import {AD_CAMPAIGNS,FINAL_ROUND,INVESTORS,canFinishRace,classCap,developmentTime,emptyLedger,forecastLabel,inferenceCost,investmentDecision,modelBuildCost,runDeterministicSimulation,spendableBudget,subscriptionConversion,upkeepCost,weakReleaseFactor} from "../public/game-core.js";
+import {AD_CAMPAIGNS,FINAL_ROUND,INVESTORS,annualPerformancePenalty,canFinishRace,classCap,developmentTime,emptyLedger,forecastLabel,growthOperationsCost,inferenceCost,investmentDecision,launchPlacementHype,modelBuildCost,newsCoverageChance,newsImpact,runDeterministicSimulation,spendableBudget,subscriptionConversion,upkeepCost,weakReleaseFactor} from "../public/game-core.js";
 
 test("Lite and Flash have strict capability caps and one-quarter builds",()=>{
   assert.equal(classCap("light","Reasoning",100),62);assert.equal(classCap("light","Speed",100),82);
@@ -29,6 +29,22 @@ test("large PRO subscriber usage consumes a meaningful share of revenue",()=>{
   const serving=inferenceCost({users:1200000,subscribers:1000000,freeLimit:10,proLimit:200,score:90,type:"pro"}).total;
   assert.ok(serving>quarterlyRevenue*.55);
 });
+test("launch placement rewards are strong but tiered",()=>{
+  assert.equal(launchPlacementHype(1),24);assert.equal(launchPlacementHype(2),15);assert.equal(launchPlacementHype(3),15);assert.equal(launchPlacementHype(4),8);assert.equal(launchPlacementHype(5),8);assert.equal(launchPlacementHype(6),0);
+});
+test("growth operations progressively constrain runaway companies",()=>{
+  const small=growthOperationsCost({users:100000,subscribers:5000,revenue:.4,budget:8});
+  const leader=growthOperationsCost({users:8000000,subscribers:900000,revenue:30,budget:55});
+  assert.ok(leader>small*30);assert.ok(leader>10);
+});
+test("better launches earn more coverage and top news creates dynamic growth",()=>{
+  const weak=newsCoverageChance({score:45,debutRank:12,type:"light"}),breakout=newsCoverageChance({score:90,debutRank:1,type:"pro"});assert.ok(breakout>weak*3);assert.ok(breakout<=.96);
+  const third=newsImpact({views:1000000,articleRank:3,score:80,existingConversion:.03}),first=newsImpact({views:1000000,articleRank:1,score:80,existingConversion:.03});assert.ok(first.hype>third.hype);assert.ok(first.users>third.users);assert.ok(first.subscribers>third.subscribers);
+});
+test("point losses target only severe hype and stagnation failures",()=>{
+  assert.deepEqual(annualPerformancePenalty({hype:5,bottomRank:1,quartersSinceLaunch:6,hasModels:true}),{lowHype:2,stagnation:1,total:3});
+  assert.equal(annualPerformancePenalty({hype:30,bottomRank:8,quartersSinceLaunch:2,hasModels:true}).total,0);
+});
 test("very expensive subscriptions convert much worse",()=>{
   const normal=subscriptionConversion({offerScore:70,priceFactor:1});
   const pricey=subscriptionConversion({offerScore:70,priceFactor:.44});
@@ -42,6 +58,6 @@ test("investment can reject or return a partial offer",()=>{
 });
 test("forecast bands and ledger defaults are stable",()=>{assert.equal(forecastLabel(30),"Poor");assert.equal(forecastLabel(85),"Exceptional");assert.deepEqual(emptyLedger(4).round,4);});
 test("Standard protects a runway while Hard exposes every euro",()=>{assert.equal(spendableBudget(10,false),9.9);assert.equal(spendableBudget(.1,false),0);assert.equal(spendableBudget(.1,true),.1);});
-test("race cannot finish before Q1 2027",()=>{assert.equal(FINAL_ROUND,12);assert.equal(canFinishRace(11),false);assert.equal(canFinishRace(12),true);});
-test("100 seeded Standard and Hard simulations always finish cleanly",()=>{for(const hard of [false,true])for(let seed=1;seed<=100;seed++){const result=runDeterministicSimulation(seed,hard);assert.equal(result.rounds,13);assert.equal(result.companies.length,16);result.companies.forEach(c=>{assert.ok(Number.isFinite(c.budget));if(!hard)assert.ok(c.budget>=.1);assert.ok(c.requests<=3);if(c.models.length){assert.ok(c.users>=c.models.length*25);assert.ok(c.models.every(m=>m.users>=25));}});}});
-test("app contains v5 migration, observer endings and no payment code",()=>{const app=readFileSync(new URL("../public/app.js",import.meta.url),"utf8"),html=readFileSync(new URL("../public/index.html",import.meta.url),"utf8");assert.match(app,/CURRENT_SAVE_VERSION\s*=\s*5|version:\s*5/);assert.match(app,/function showBankruptcy/);assert.match(app,/function simulateToEnd/);assert.match(app,/function awardTopThreeStreaks/);assert.match(html,/id="setupScreen" class="setup-screen is-hidden"/);assert.match(app,/else \$\("#setupScreen"\)\.classList\.remove\("is-hidden"\)/);assert.doesNotMatch(app+html,/Paddle|hard-mode\/verify|Unlock Hard Mode/);});
+test("race runs from Q1 2020 and cannot finish before Q1 2027",()=>{assert.equal(FINAL_ROUND,28);assert.equal(canFinishRace(27),false);assert.equal(canFinishRace(28),true);});
+test("100 seeded Standard and Hard simulations always finish cleanly",()=>{for(const hard of [false,true])for(let seed=1;seed<=100;seed++){const result=runDeterministicSimulation(seed,hard);assert.equal(result.rounds,29);assert.equal(result.companies.length,16);result.companies.forEach(c=>{assert.ok(Number.isFinite(c.budget));if(!hard)assert.ok(c.budget>=.1);assert.ok(c.requests<=3);if(c.models.length){assert.ok(c.users>=c.models.length*25);assert.ok(c.models.every(m=>m.users>=25));}});}});
+test("app contains v6 migration, dynamic families, gated inbox, news variety, observer endings and no payment code",()=>{const app=readFileSync(new URL("../public/app.js",import.meta.url),"utf8"),html=readFileSync(new URL("../public/index.html",import.meta.url),"utf8"),newsBlock=app.match(/const NEWS_TEMPLATES\s*=\s*\[([\s\S]*?)\n\];/)[1];assert.match(app,/CURRENT_SAVE_VERSION\s*=\s*6|version:\s*6/);assert.match(app,/const BASE_YEAR\s*=\s*2020/);assert.match(app,/function quarterGateStatus/);assert.match(app,/if\(!auto\).*quarterGateStatus/);assert.match(app,/function nextRivalFamily/);assert.match(app,/familyReputations/);assert.match(app,/function showBankruptcy/);assert.match(app,/function simulateToEnd/);assert.match(app,/function awardTopThreeStreaks/);assert.match(app,/function generateQuarterlyNews/);assert.equal((newsBlock.match(/^  \["/gm)||[]).length,20);assert.match(html,/value="new-family"/);assert.match(html,/id="newsView"/);assert.match(html,/id="inboxView"/);assert.match(html,/id="setupScreen" class="setup-screen is-hidden"/);assert.match(app,/else \$\("#setupScreen"\)\.classList\.remove\("is-hidden"\)/);assert.doesNotMatch(app+html,/Paddle|hard-mode\/verify|Unlock Hard Mode/);});

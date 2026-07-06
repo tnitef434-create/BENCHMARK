@@ -144,6 +144,7 @@ function migrateState(){
     c.models.forEach((m,j)=>{m.id ||= `${c.id}-${m.releaseMonth}-${j}`;m.family ||= cleanFamily(m.name);m.versionNumber ||= j+1;m.modifiers ||= m.type==="pro"?["pro"]:m.type==="light"?["lite"]:m.type==="flash"?["flash"]:[];if(m.modifiers.length>1)m.modifiers=[m.modifiers.includes("pro")?"pro":m.modifiers.includes("flash")?"flash":"lite"];m.operatingMode||="full";m.activeUsers||=0;m.paidUsers||=0;m.userDelta||=0;m.revenue||=0;m.inferenceCost||=0;m.upkeep||=0;m.net||=0;m.financeHistory||=[];m.popularityFactor||=1;});
     const released=c.models.filter(m=>m.released);if(released.length&&c.users<=0){released.forEach(m=>m.activeUsers=Math.max(25,Math.round(120+m.score*8)));c.users=released.reduce((sum,m)=>sum+m.activeUsers,0);c.userDelta=c.users;}
   });
+  repairLegacyNotifications();
 }
 
 function cleanFamily(name){return String(name||"").trim().replace(/\s+\d+(?:\.\d+)?(?:\s+(?:PRO|LITE|FLASH))*$/i,"").trim();}
@@ -249,6 +250,36 @@ function notify(companyId, title, text) {
   state.notifications.unshift({id:Date.now()+Math.random(), month:state.month, companyId, unread:true, title, text});
   state.unread++;
 }
+function notificationText(kind,data={}){
+  if(kind==="investmentAccepted")return `${money(data.offer)} invested after a ${money(data.requested)} request.`;
+  if(kind==="investmentDeclined")return `The ${money(data.requested)} funding request was rejected.`;
+  return data.text||"";
+}
+function notifyStructured(companyId,title,kind,data={}){
+  state.notifications.unshift({id:Date.now()+Math.random(),month:state.month,companyId,unread:true,title,kind,data,text:notificationText(kind,data)});
+  state.unread++;
+}
+function repairLegacyNotifications(){
+  state.notifications=(state.notifications||[]).map(n=>{
+    if(n.kind&&n.data)return {...n,text:notificationText(n.kind,n.data)};
+    if(!n.companyId||n.companyId==="system")return n;
+    const title=String(n.title||""),text=String(n.text||"");
+    if(!/€0\.00M/.test(text))return n;
+    const c=company(n.companyId);if(!c)return n;
+    const accepted=title.match(/^(.*?)\s+backs\s+/i);
+    if(accepted){
+      const investor=accepted[1].trim();
+      const match=(c.investments||[]).find(i=>i.round===n.month&&i.investor===investor&&i.amount>0);
+      if(match)return {...n,kind:"investmentAccepted",data:{requested:match.requested,offer:match.amount},text:notificationText("investmentAccepted",{requested:match.requested,offer:match.amount})};
+    }
+    const declined=title.match(/^(.*?)\s+declines\s+/i);
+    if(declined){
+      const amountMatch=title.match(/€(\d+(?:\.\d+)?)M/i);
+      if(amountMatch)return {...n,kind:"investmentDeclined",data:{requested:Number(amountMatch[1])},text:notificationText("investmentDeclined",{requested:Number(amountMatch[1])})};
+    }
+    return n;
+  });
+}
 function ledgerFor(c){if(!c.currentLedger||c.currentLedger.round!==state.month)c.currentLedger=emptyLedger(state.month);return c.currentLedger;}
 function bookExpense(c,key,amount){if(!amount)return;c.budget-=amount;const l=ledgerFor(c);l[key]=(l[key]||0)+amount;l.spending+=amount;l.net=l.revenue+l.investmentIncome-l.spending;}
 function bookIncome(c,key,amount){if(!amount)return;c.budget+=amount;const l=ledgerFor(c);if(key==="investmentIncome")l.investmentIncome+=amount;else{l[key]=(l[key]||0)+amount;l.revenue+=amount;}l.net=l.revenue+l.investmentIncome-l.spending;}
@@ -305,6 +336,7 @@ function renderHypeRanking() {
 }
 
 function renderNotifications() {
+  repairLegacyNotifications();
   const items=state.notifications;
   $("#notificationList").innerHTML=items.length?items.map(n=>{
     const c=n.companyId==="system"?{mark:"●"}:company(n.companyId);
@@ -509,7 +541,7 @@ function quarterlyEconomy(){
 
 function rollLedgers(){state.companies.forEach(c=>{if(c.currentLedger){c.currentLedger.closing=c.budget;c.currentLedger.net=c.currentLedger.revenue+c.currentLedger.investmentIncome-c.currentLedger.spending;c.financeHistory.push({...c.currentLedger});if(c.financeHistory.length>16)c.financeHistory.shift();}c.currentLedger=emptyLedger(state.month+1);});}
 function companyInvestmentMetrics(c){const best=Math.max(0,...c.models.filter(m=>m.released).map(m=>m.score));return{bestScore:best,projectEstimate:c.project?.estimate||0,hype:c.hype,users:c.users,subscribers:c.subscribers};}
-function requestCompanyInvestment(c,investor,amount){if(c.investmentRequests>=3)return null;c.investmentRequests++;const result=investmentDecision({investor,amount,metrics:companyInvestmentMetrics(c),random:seeded});if(result.accepted){bookIncome(c,"investmentIncome",result.offer);c.investments.push({round:state.month,investor:investor.name,requested:amount,amount:result.offer});notify(c.id,`${investor.name} backs ${c.name}`,`${money(result.offer)} invested after a ${money(amount)} request.`);}else notify(c.id,`${investor.name} declines ${c.name}`,`The ${money(amount)} funding request was rejected.`);return result;}
+function requestCompanyInvestment(c,investor,amount){if(c.investmentRequests>=3)return null;c.investmentRequests++;const result=investmentDecision({investor,amount,metrics:companyInvestmentMetrics(c),random:seeded});if(result.accepted){bookIncome(c,"investmentIncome",result.offer);c.investments.push({round:state.month,investor:investor.name,requested:amount,amount:result.offer});notifyStructured(c.id,`${investor.name} backs ${c.name}`,"investmentAccepted",{requested:amount,offer:result.offer});}else notifyStructured(c.id,`${investor.name} declines ${c.name}`,"investmentDeclined",{requested:amount});return result;}
 function rivalInvestment(c){if(c.investmentRequests>=3||c.budget>2.2||seeded()>.36)return;const investor=INVESTORS[Math.floor(seeded()*INVESTORS.length)],amount=clamp(Math.round((2+c.project?.estimate/15+seeded()*3)*10)/10,1,10);requestCompanyInvestment(c,investor,amount);}
 function rivalAdvertising(c){if(c.insolvent||!c.subscriptions.length||availableCash(c)<.25||seeded()>.22)return;const size=availableCash(c)>5&&seeded()>.6?"large":availableCash(c)>2?"medium":"small",campaign=AD_CAMPAIGNS[size],tier=c.subscriptions[0];if(campaign.cost>availableCash(c))return;bookExpense(c,"advertising",campaign.cost);c.campaignRepeat=c.campaign?.size===size?(c.campaignRepeat||0)+1:0;c.campaign={size,tierId:tier.id};}
 function awardTopThreeStreaks(){const top=releasedModels().sort((a,b)=>b.score-a.score).slice(0,3),present=new Set(top.map(m=>m.companyId));state.companies.forEach(c=>{if(present.has(c.id)){c.top3Streak=(c.top3Streak||0)+1;if(c.top3Streak>=3){c.points++;c.streakPoints=(c.streakPoints||0)+1;notify(c.id,`${c.name} earns a top-three streak point`,`${c.top3Streak} consecutive quarters in the model top three.`);}}else c.top3Streak=0;});}

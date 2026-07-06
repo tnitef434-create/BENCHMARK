@@ -40,20 +40,29 @@ export function weakReleaseFactor(score,previousBest){
   return ratio<.75?.2:ratio<.9?.55:1;
 }
 export function inferenceCost({users=0,subscribers=0,freeLimit=0,proLimit=0,score=0,type="flagship",mode="full"}){
-  const intensity=clamp(score/100,.1,1),perMessage=.0005+intensity*intensity*.0035;
-  const classMultiplier=type==="light"?.4:type==="flash"?.55:type==="pro"?1.2:1;
+  const intensity=clamp(score/100,.1,1),perMessage=.0007+Math.pow(intensity,3)*.0073;
+  const classMultiplier=type==="light"?.38:type==="flash"?.52:type==="pro"?1.45:1;
   const limitMultiplier=OPERATING_MODES[mode]?.limits||1;
   const freeUsers=Math.max(0,users-subscribers);
-  const free=freeUsers*freeLimit*limitMultiplier*90*.22*perMessage*classMultiplier/1e6;
-  const paid=subscribers*proLimit*limitMultiplier*90*.16*perMessage*classMultiplier/1e6;
+  const free=freeUsers*freeLimit*limitMultiplier*90*.25*perMessage*classMultiplier/1e6;
+  const paid=subscribers*proLimit*limitMultiplier*90*.27*perMessage*classMultiplier/1e6;
   return {free,paid,total:free+paid,perMessage};
 }
-export function upkeepCost(score,type="flagship",mode="full"){
-  return (.015+score*score*.000006)*(CLASS_RULES[type]?.upkeep||1)*(OPERATING_MODES[mode]?.upkeep||1);
+export function upkeepCost(score,type="flagship",mode="full",users=0){
+  const frontier=Math.pow(Math.max(0,score-58)/42,2.35)*2.15;
+  const scaleOverhead=Math.sqrt(Math.max(0,users)/100000)*.12;
+  return (.025+score*score*.000012+frontier+scaleOverhead)*(CLASS_RULES[type]?.upkeep||1)*(OPERATING_MODES[mode]?.upkeep||1);
 }
-export function subscriptionConversion({offerScore=0,adBoost=0,repeatedAds=0,audienceFactor=1}){
+export function modelBuildCost({values=[],type="flagship",variance=0,overreach=0,access="hybrid"}){
+  const avg=average(values),base=CLASS_RULES[type]?.build??.72;
+  const frontier=values.reduce((sum,value)=>sum+5.5*Math.pow(Math.max(0,value-65)/35,3),0);
+  const broadIntelligence=Math.pow(Math.max(0,avg-55)/45,2.4)*8;
+  const raw=base+frontier+broadIntelligence+avg*avg*.00034+variance*.013+overreach*overreach*.016+(access==="free"?.13:0);
+  return raw*(type==="pro"?1.22:1);
+}
+export function subscriptionConversion({offerScore=0,adBoost=0,repeatedAds=0,audienceFactor=1,priceFactor=1}){
   const diminishing=Math.pow(.75,repeatedAds),effective=offerScore+adBoost*diminishing;
-  return clamp((.005+effective*.00115)*audienceFactor,.0035,.12);
+  return clamp((.005+effective*.00115)*audienceFactor*priceFactor,.0015,.12);
 }
 export function forecastLabel(score){return score<35?"Poor":score<45?"Bad":score<58?"Average":score<70?"Good":score<82?"Great":"Exceptional";}
 export function investmentPotential({bestScore=0,projectEstimate=0,hype=0,users=0,subscribers=0}){

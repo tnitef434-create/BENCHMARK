@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
-import {AD_CAMPAIGNS,FINAL_ROUND,INVESTORS,canFinishRace,classCap,developmentTime,emptyLedger,forecastLabel,inferenceCost,investmentDecision,runDeterministicSimulation,spendableBudget,subscriptionConversion,weakReleaseFactor} from "../public/game-core.js";
+import {AD_CAMPAIGNS,FINAL_ROUND,INVESTORS,canFinishRace,classCap,developmentTime,emptyLedger,forecastLabel,inferenceCost,investmentDecision,modelBuildCost,runDeterministicSimulation,spendableBudget,subscriptionConversion,upkeepCost,weakReleaseFactor} from "../public/game-core.js";
 
 test("Lite and Flash have strict capability caps and one-quarter builds",()=>{
   assert.equal(classCap("light","Reasoning",100),62);assert.equal(classCap("light","Speed",100),82);
@@ -16,6 +16,24 @@ test("free serving cost grows with users, limits and model weight",()=>{
 test("offers and ads improve subscriber conversion with diminishing returns",()=>{
   const base=subscriptionConversion({offerScore:45}),large=subscriptionConversion({offerScore:75,adBoost:AD_CAMPAIGNS.large.boost}),repeat=subscriptionConversion({offerScore:75,adBoost:AD_CAMPAIGNS.large.boost,repeatedAds:3});
   assert.ok(large>base);assert.ok(repeat<large);
+});
+test("frontier models carry major build and quarterly operating costs",()=>{
+  const ordinary=modelBuildCost({values:Array(25).fill(55),type:"flagship"});
+  const smart=modelBuildCost({values:Array(25).fill(85),type:"pro"});
+  const extreme=modelBuildCost({values:Array(25).fill(100),type:"pro"});
+  assert.ok(smart>ordinary*8);assert.ok(extreme>smart*3);assert.ok(extreme>100);
+  assert.ok(upkeepCost(92,"pro","full",5000000)>upkeepCost(55,"flagship","full",100000)*10);
+});
+test("large PRO subscriber usage consumes a meaningful share of revenue",()=>{
+  const quarterlyRevenue=1000000*19*3/1e6;
+  const serving=inferenceCost({users:1200000,subscribers:1000000,freeLimit:10,proLimit:200,score:90,type:"pro"}).total;
+  assert.ok(serving>quarterlyRevenue*.55);
+});
+test("very expensive subscriptions convert much worse",()=>{
+  const normal=subscriptionConversion({offerScore:70,priceFactor:1});
+  const pricey=subscriptionConversion({offerScore:70,priceFactor:.44});
+  const extreme=subscriptionConversion({offerScore:70,priceFactor:.12});
+  assert.ok(pricey<normal*.6);assert.ok(extreme<pricey*.4);
 });
 test("weak releases are strongly suppressed",()=>{assert.equal(weakReleaseFactor(89,100),.55);assert.equal(weakReleaseFactor(74,100),.2);assert.equal(weakReleaseFactor(95,100),1);});
 test("investment can reject or return a partial offer",()=>{

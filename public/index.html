@@ -127,6 +127,14 @@
           <input id="companyLogo" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" />
         </span>
       </label>
+      <fieldset><legend>Starting subscription</legend>
+        <label class="mode-option"><input type="radio" name="startingSubscription" value="yes" checked><span><strong>Create one</strong><small>Start with your first paid tier ready</small></span></label>
+        <label class="mode-option"><input type="radio" name="startingSubscription" value="no"><span><strong>No tier</strong><small>Start without a subscription</small></span></label>
+      </fieldset>
+      <div id="startingSubscriptionFields" class="form-row">
+        <label>Subscription name<input id="startingSubscriptionName" maxlength="18" value="Pro" /></label>
+        <label>Monthly price<input id="startingSubscriptionPrice" type="number" min="3" max="200" value="19" /></label>
+      </div>
       <fieldset><legend>Difficulty</legend>
         <label class="mode-option"><input type="radio" name="difficulty" value="standard" checked><span><strong>Standard</strong><small>Rivals start with €10M</small></span></label>
         <label class="mode-option"><input type="radio" name="difficulty" value="hard"><span><strong>Hard</strong><small>Rivals start with €20M and move faster</small></span></label>

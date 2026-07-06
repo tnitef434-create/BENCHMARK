@@ -1,4 +1,4 @@
-import {AD_CAMPAIGNS,CLASS_RULES,FINAL_ROUND,INVESTORS,OPERATING_MODES,average,canFinishRace,categoryImportance,classCap,clamp,developmentTime,emptyLedger,forecastLabel,inferenceCost,investmentDecision,spendableBudget,subscriptionConversion,upkeepCost,weakReleaseFactor} from "./game-core.js";
+import {AD_CAMPAIGNS,CLASS_RULES,FINAL_ROUND,INVESTORS,OPERATING_MODES,average,canFinishRace,categoryImportance,classCap,clamp,developmentTime,emptyLedger,forecastLabel,inferenceCost,investmentDecision,modelBuildCost,spendableBudget,subscriptionConversion,upkeepCost,weakReleaseFactor} from "./game-core.js";
 
 const LEGACY_CATEGORIES = ["Reasoning","Mathematics","Coding","Physics","Chemistry","Biology","Medicine","Law","Finance","History","Geography","Literature","Creative writing","Translation","Long-context recall","Instruction following","Factual accuracy","Common sense","Planning","Tool use","Agentic work","Data analysis","Cybersecurity","Visual understanding","Image creation","Audio understanding","Speech generation","Video understanding","Multilingual ability","Low-resource languages","Safety","Bias resistance","Speed","Efficiency","Reliability"];
 const PREVIOUS_CATEGORIES = ["Reasoning","Mathematics","Coding","Science","Factual accuracy","Instruction following","Common sense","Long-context recall","Planning","Tool use","Agentic work","Data analysis","Visual understanding","Image generation","Audio understanding","Speech generation","Video understanding","Multimodal integration","Multilingual ability","Safety","Speed","Efficiency","Reliability"];
@@ -87,13 +87,13 @@ function createMarketSnapshot(round,random=Math.random){
   return {round,total:Math.round(10000000*Math.pow(1.075,round)*(.96+random()*.08)),shares};
 }
 
-function newGame(name, firstModel, difficulty, playerLogo) {
+function newGame(name, firstModel, difficulty, playerLogo, startingSubscription=null) {
   const rivalBudget = difficulty === "hard" ? 20 : 10;
   const companies = RIVALS.map(r => makeCompany(r[0], r[1], r[2], rivalBudget, r[4]));
   const audienceKeys=Object.keys(AUDIENCES);
   companies.forEach((c,i)=>c.strategy={quality:.82+Math.random()*.43,speed:.72+Math.random()*.55,pro:.12+Math.random()*.6,free:.12+Math.random()*.7,update:.42+Math.random()*.45,focus:(i*3+Math.floor(Math.random()*12))%CATEGORIES.length,audience:audienceKeys[Math.floor(Math.random()*audienceKeys.length)]});
   const p = makeCompany("player", name.trim(), name.trim().slice(0,2).toUpperCase(), 10, [], playerLogo);
-  p.subscriptions = [{id:"pro", name:"Pro", price:19, members:0}];
+  p.subscriptions = startingSubscription?[{id:"pro", name:startingSubscription.name, price:startingSubscription.price, members:0, memberDelta:0}]:[];
   companies.push(p);
   return {
     version: CURRENT_SAVE_VERSION, month: 0, difficulty, companies, firstDraft: cleanFamily(firstModel), selectedAudience:"casual", marketHistory:[createMarketSnapshot(0)],
@@ -199,9 +199,9 @@ function autoModelClass(c,family,mode,values){
   if(!latest||mode==="new")return {type:"flagship",modifiers:[],reason:"New generation defaults to Flagship unless it is a tuned follow-up."};
   const previous=latest.score||average(latest.values||[avg]),delta=avg-previous;
   const speedLead=speed-avg,efficiencyLead=efficiency-avg,reliabilityLead=reliability-avg;
-  const flashCandidate=(speedLead>=14&&efficiencyLead>=10)||(speed>=82&&efficiency>=76&&reliability>=68&&delta>=-3&&delta<=8);
+  const flashCandidate=(speedLead>=14&&efficiencyLead>=10)||(speed>=82&&efficiency>=76&&reliability>=68&&delta>=-3&&delta<7);
+  if(mode==="update"&&delta>=7&&state.month>=c.proUntil&&c.models.filter(m=>m.released).length>0)return {type:"pro",modifiers:["pro"],reason:"This update is far ahead of its base model, so it becomes PRO automatically."};
   if(flashCandidate)return {type:"flash",modifiers:["flash"],reason:"Speed, efficiency and reliability are driving a faster tuned release."};
-  if(mode==="update"&&delta>=8&&state.month>=c.proUntil&&c.models.filter(m=>m.released).length>0)return {type:"pro",modifiers:["pro"],reason:"This update is far ahead of its base model, so it becomes PRO automatically."};
   if(delta<=-4||avg<=previous*.92)return {type:"light",modifiers:["lite"],reason:"This release trails the main model, so it becomes LITE automatically."};
   return {type:"flagship",modifiers:[],reason:"Balanced follow-up quality keeps this release in Flagship class."};
 }
@@ -231,6 +231,11 @@ function audienceMonetizationFactor(profile,marketShares={}){
   const total=Object.values(raw).reduce((sum,value)=>sum+value,0)||1;
   return Object.entries(raw).reduce((sum,[key,value])=>sum+(value/total)*(weights[key]||1),0);
 }
+function subscriptionPriceFactor(price){
+  if(price<=30)return 1;
+  if(price<=50)return clamp(1-(price-30)*.028,.44,1);
+  return clamp(.44-Math.pow(price-50,1.08)*.012,.08,.44);
+}
 function modelMarketAppeal(model,market,c){
   let publicScore=0;Object.entries(market.shares).forEach(([key,share])=>publicScore+=audienceScore(model,key)*share);
   const age=Math.max(0,state.month-model.releaseMonth),freshness=Math.max(.18,Math.pow(.92,age));
@@ -250,7 +255,7 @@ function updateQuarterlyAudience(){
   state.companies.forEach(c=>{
     const models=c.models.filter(m=>m.released),raw=companyRaw.get(c.id)||0,minimum=models.length*25,target=rawTotal?Math.max(minimum,market.total*.62*raw/rawTotal):minimum,previous=c.users||0,users=models.length?Math.max(minimum,Math.round(previous*.45+target*.55)):0;c.userDelta=users-previous;c.users=users;
     const weights=modelRaw.get(c.id)||[],weightTotal=weights.reduce((sum,x)=>sum+x[1],0)||1,distributable=Math.max(0,users-weights.length*25);let extraAssigned=0;weights.forEach(([m,w],i)=>{const old=m.activeUsers||0,extra=i===weights.length-1?distributable-extraAssigned:Math.round(distributable*w/weightTotal),next=25+Math.max(0,extra);m.userDelta=next-old;m.activeUsers=next;extraAssigned+=Math.max(0,extra);});
-    const profile=companyAudienceProfile(c),catalogQuality=Math.max(0,...Object.values(profile)),diversity=clamp(models.length*8,0,24),tiers=c.subscriptions||[],avgPrice=tiers.length?average(tiers.map(t=>t.price)):30,limitValue=models.length?average(models.map(m=>clamp((m.proLimit||0)/10,0,100))):0,offerScore=clamp(catalogQuality*.55+diversity+limitValue*.2+clamp(35-avgPrice,0,25)*.6,0,100),ad=c.campaign?AD_CAMPAIGNS[c.campaign.size]:null,audienceFactor=audienceMonetizationFactor(profile,market.shares),conversion=tiers.length?subscriptionConversion({offerScore,adBoost:ad?.boost||0,repeatedAds:c.campaignRepeat||0,audienceFactor}):.005,targetSubs=Math.round(users*conversion),oldSubs=c.subscribers||0,subs=Math.min(users,Math.round(oldSubs*.45+targetSubs*.55));c.subDelta=subs-oldSubs;c.subscribers=subs;
+    const profile=companyAudienceProfile(c),catalogQuality=Math.max(0,...Object.values(profile)),diversity=clamp(models.length*8,0,24),tiers=c.subscriptions||[],avgPrice=tiers.length?average(tiers.map(t=>t.price)):30,limitValue=models.length?average(models.map(m=>clamp((m.proLimit||0)/10,0,100))):0,offerScore=clamp(catalogQuality*.55+diversity+limitValue*.2+clamp(35-avgPrice,0,25)*.6,0,100),ad=c.campaign?AD_CAMPAIGNS[c.campaign.size]:null,audienceFactor=audienceMonetizationFactor(profile,market.shares),priceFactor=tiers.length?average(tiers.map(t=>subscriptionPriceFactor(t.price))):1,conversion=tiers.length?subscriptionConversion({offerScore,adBoost:ad?.boost||0,repeatedAds:c.campaignRepeat||0,audienceFactor,priceFactor}):.005,targetSubs=Math.round(users*conversion),oldSubs=c.subscribers||0,subs=Math.min(users,Math.round(oldSubs*.45+targetSubs*.55));c.subDelta=subs-oldSubs;c.subscribers=subs;
     if(tiers.length){const tierWeights=tiers.map(t=>Math.max(.1,(40-t.price)/20)*(c.campaign?.tierId===t.id?1.5:1)),tw=tierWeights.reduce((a,b)=>a+b,0);let distributed=0;tiers.forEach((t,i)=>{const old=t.members||0,next=i===tiers.length-1?subs-distributed:Math.round(subs*tierWeights[i]/tw);t.memberDelta=next-old;t.members=next;distributed+=next;});}
     const eligible=models.filter(m=>m.access!=="free"),eligibleTotal=eligible.reduce((sum,m)=>sum+m.activeUsers,0)||1;eligible.forEach(m=>m.paidUsers=Math.min(m.activeUsers,Math.round(subs*m.activeUsers/eligibleTotal)));models.filter(m=>m.access==="free").forEach(m=>m.paidUsers=0);
     c.hype=Math.max(0,c.hype+clamp(c.userDelta/120000+c.subDelta/18000,-14,20)+Math.log10(users+1)*.18);c.metricsHistory.push({round:state.month,users,subscribers:subs,userDelta:c.userDelta,subDelta:c.subDelta});if(c.metricsHistory.length>16)c.metricsHistory.shift();
@@ -298,8 +303,9 @@ function estimateBuild(values, type, access, freeLimit, proLimit, c = player(), 
   const overreach = Math.max(0, avg - ceiling);
   const accessBoost = access === "paid" ? clamp(proLimit / 800, 0, 1.5) : access === "hybrid" ? clamp((proLimit-freeLimit)/1000,0,1) : 0;
   const comboCost=Math.max(0,modifiers.length-1)*.22;
-  const extremeCost=values.reduce((sum,value)=>sum+5*Math.pow(Math.max(0,value-65)/35,3),0);
-  const cost = TYPES[type].base + comboCost + extremeCost + (avg ** 2) * .00034 + variance * .013 + (overreach ** 2) * .016 + (access === "free" ? .13 : 0);
+  const baselineCost=modelBuildCost({values,type,variance,overreach,access});
+  const extremeCost=Math.max(0,baselineCost-(CLASS_RULES[type]?.build||0)-(avg ** 2) * .00034-variance*.013-(overreach ** 2)*.016-(access==="free"?.13:0));
+  const cost = baselineCost + comboCost;
   const time = developmentTime(type,"new",avg,overreach);
   const risk = clamp(overreach * 2.8, 0, 58);
   const expected = clamp(avg + accessBoost - risk * .09, 1, 99);
@@ -588,7 +594,7 @@ function quarterlyEconomy(){
   state.companies.forEach(c=>{
     const models=c.models.filter(m=>m.released),subscriptionRevenue=(c.subscriptions||[]).reduce((sum,t)=>sum+(t.members||0)*t.price*3/1000000,0);bookIncome(c,"subscriptionRevenue",subscriptionRevenue);
     const totalPaid=models.reduce((sum,m)=>sum+(m.paidUsers||0),0)||1;
-    const calculate=()=>models.forEach(m=>{const compute=inferenceCost({users:m.activeUsers,subscribers:m.paidUsers,freeLimit:m.access==="paid"?0:m.freeLimit,proLimit:m.proLimit,score:m.score,type:m.type,mode:m.operatingMode});m.revenue=subscriptionRevenue*(m.paidUsers||0)/totalPaid;m.inferenceCost=compute.total;m.upkeep=upkeepCost(m.score,m.type,m.operatingMode);m.net=m.revenue-m.inferenceCost-m.upkeep;});
+    const calculate=()=>models.forEach(m=>{const compute=inferenceCost({users:m.activeUsers,subscribers:m.paidUsers,freeLimit:m.access==="paid"?0:m.freeLimit,proLimit:m.proLimit,score:m.score,type:m.type,mode:m.operatingMode});m.revenue=subscriptionRevenue*(m.paidUsers||0)/totalPaid;m.inferenceCost=compute.total;m.upkeep=upkeepCost(m.score,m.type,m.operatingMode,m.activeUsers);m.net=m.revenue-m.inferenceCost-m.upkeep;});
     calculate();
     let planned=models.reduce((s,m)=>s+m.inferenceCost+m.upkeep,0),originalPlanned=planned,protectedRunway=false;
     if(state.difficulty!=="hard"&&planned>availableCash(c)){
@@ -744,6 +750,12 @@ function showEnd(){
 function escapeHtml(s){return String(s??"").replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]));}
 function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");clearTimeout(toast.timer);toast.timer=setTimeout(()=>t.classList.remove("show"),2400);}
 function fileToDataUrl(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file);});}
+function toggleStartingSubscriptionFields(){
+  const create=new FormData($("#setupForm")).get("startingSubscription")!=="no";
+  $("#startingSubscriptionFields").classList.toggle("is-hidden",!create);
+  $("#startingSubscriptionName").required=create;
+  $("#startingSubscriptionPrice").required=create;
+}
 
 function bind(){
   $("#companyLogo").addEventListener("change",async e=>{
@@ -751,7 +763,9 @@ function bind(){
     if(file.size>1.5*1024*1024){e.target.value="";$("#logoPreview").innerHTML=`<svg><use href="#i-plus"/></svg>`;toast("Logo must be smaller than 1.5 MB.");return;}
     const data=await fileToDataUrl(file);$("#logoPreview").innerHTML=`<img src="${data}" alt="Logo preview">`;
   });
-  $("#setupForm").addEventListener("submit",async e=>{e.preventDefault();const difficulty=new FormData(e.target).get("difficulty"),file=$("#companyLogo").files[0];if(file?.size>1.5*1024*1024){toast("Logo must be smaller than 1.5 MB.");return;}const logo=file?await fileToDataUrl(file):null;state=newGame($("#companyName").value,$("#firstModelName").value,difficulty,logo);render();});
+  $$('input[name="startingSubscription"]').forEach(input=>input.addEventListener("change",toggleStartingSubscriptionFields));
+  toggleStartingSubscriptionFields();
+  $("#setupForm").addEventListener("submit",async e=>{e.preventDefault();const form=new FormData(e.target),difficulty=form.get("difficulty"),createSubscription=form.get("startingSubscription")!=="no",file=$("#companyLogo").files[0];if(file?.size>1.5*1024*1024){toast("Logo must be smaller than 1.5 MB.");return;}const logo=file?await fileToDataUrl(file):null;const startingSubscription=createSubscription?{name:($("#startingSubscriptionName").value.trim()||"Pro").slice(0,18),price:Math.max(3,Math.min(200,+$("#startingSubscriptionPrice").value||19))}:null;state=newGame($("#companyName").value,$("#firstModelName").value,difficulty,logo,startingSubscription);render();});
   $("#modelCompanyFilter").addEventListener("change",e=>{modelCompanyFilter=e.target.value;renderModelRanking();});
   $$(".nav-btn[data-view]").forEach(b=>b.addEventListener("click",()=>switchView(b.dataset.view)));
   $("#advanceBtn").addEventListener("click",()=>advanceMonth(false)); $("#newModelBtn").addEventListener("click",openModelBuilder);

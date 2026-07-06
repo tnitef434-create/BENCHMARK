@@ -94,6 +94,8 @@
 
       <section id="companiesView" class="view">
         <div class="section-heading"><div><p class="eyebrow">16 LABS</p><h2>Company directory</h2></div><p class="section-note">Open a company to inspect its models and remaining budget.</p></div>
+        <div class="ranking-head company-leaderboard-grid"><span>Rank / company</span><span>Budget</span><span>Users</span><span>Subscribers</span><span>Hype</span><span>Points</span></div>
+        <div id="companyLeaderboard" class="ranking-list company-leaderboard"></div>
         <div id="companyGrid" class="company-cards"></div>
       </section>
 
@@ -142,7 +144,7 @@
       <div class="builder-grid">
         <div class="builder-main">
           <div class="form-row"><label>Model family<input id="modelName" maxlength="24" required /></label><label>Version path<select id="modelType"><option value="new">New generation</option><option value="update">Updated version</option><option value="edition">Edition of current version</option></select></label></div>
-          <div class="edition-section"><span>Model class <small>Optional · one class per release</small></span><div class="edition-picker"><label><input type="checkbox" value="pro"><b>PRO</b></label><label><input type="checkbox" value="lite"><b>LITE</b></label><label><input type="checkbox" value="flash"><b>FLASH</b></label></div></div>
+          <div class="edition-section auto-class-section"><span>Model class <small>Assigned automatically from benchmark direction, speed focus and improvement level</small></span><div id="autoClassPreview" class="auto-class-preview">Automatic</div></div>
           <div class="form-row"><label>Access<select id="modelAccess"><option value="hybrid">Free + subscription</option><option value="free">Free for everyone</option><option value="paid">Subscription only</option></select></label><label>Subscription<select id="modelTier"></select></label></div>
           <div class="form-row"><label>Free messages / day<input id="freeLimit" type="number" min="0" max="200" value="12" /></label><label>Subscriber messages / day<input id="proLimit" type="number" min="10" max="2000" value="200" /></label></div>
           <div class="category-top"><div><h3>25 essential AI benchmarks</h3><p>Core fields can hit 100 now—but extreme specialization can consume most of your budget.</p></div><div class="preset-actions"><button type="button" id="audienceFocusBtn" class="focus-preset-btn">Focus: Casual users</button><button type="button" id="balanceSliders" class="text-btn">Balanced preset</button></div></div>

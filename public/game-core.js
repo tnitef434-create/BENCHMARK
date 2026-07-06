@@ -51,9 +51,9 @@ export function inferenceCost({users=0,subscribers=0,freeLimit=0,proLimit=0,scor
 export function upkeepCost(score,type="flagship",mode="full"){
   return (.015+score*score*.000006)*(CLASS_RULES[type]?.upkeep||1)*(OPERATING_MODES[mode]?.upkeep||1);
 }
-export function subscriptionConversion({offerScore=0,adBoost=0,repeatedAds=0}){
+export function subscriptionConversion({offerScore=0,adBoost=0,repeatedAds=0,audienceFactor=1}){
   const diminishing=Math.pow(.75,repeatedAds),effective=offerScore+adBoost*diminishing;
-  return clamp(.005+effective*.00115,.005,.12);
+  return clamp((.005+effective*.00115)*audienceFactor,.0035,.12);
 }
 export function forecastLabel(score){return score<35?"Poor":score<45?"Bad":score<58?"Average":score<70?"Good":score<82?"Great":"Exceptional";}
 export function investmentPotential({bestScore=0,projectEstimate=0,hype=0,users=0,subscribers=0}){
